@@ -31,12 +31,12 @@ class Orientator:
     def compute(self, section: Section) -> MPoint:
         orientation = section.orientation.copy()
 
-        # Autotropism
+        # Negative Autotropism
         grad = None
         if self.aggregator:
             _, grad = self.aggregator.compute_field(section.end)
             if grad is not None:
-                orientation.add(grad.scale(self.options.autotropism))
+                orientation.add(grad.scale(self.options.negative_autotropism))
 
                 # Boost alignment with field gradient
                 if self.options.field_alignment_boost > 0:
