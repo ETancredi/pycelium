@@ -18,7 +18,11 @@ class Options:
     branch_sensitivity: float = 1.0
     optimise_initial_branching: bool = True
     leading_branch_prob: float = 0.0
-    allow_internal_branching: bool = True           
+    allow_internal_branching: bool = True
+    enforce_min_tip_age: bool = False
+    min_tip_age: float = 10.0
+    enforce_min_tip_length: bool = False
+    min_tip_length: float = 10.0
 
     # Tropisms
     autotropism: float = 1.0
@@ -38,13 +42,10 @@ class Options:
     max_length: float = 50.0            
     die_if_old: bool = False
     max_age: float = 300.0   
-    enforce_min_tip_age: bool = False
-    min_tip_age: float = 10.0
-    enforce_min_tip_length: bool = False
-    min_tip_length: float = 10.0
     die_if_too_dense: bool = True
     min_supported_tips: int = 16
-    max_supported_tips: int = 1000      
+    max_supported_tips: int = 1000
+    d_age: float = 1.0 # speed of tip ageing (older tips grow and branch slower)
 
     # Density field
     density_field_enabled: bool = True
