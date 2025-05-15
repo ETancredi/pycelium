@@ -10,15 +10,19 @@ class Options:
     time_step: float = 1.0
 
     # Branching behaviour
+    branching_master: bool = True
     branch_probability: float = 0.4                 
     max_branches: int = 8                           
-    branch_angle_spread: float = 180.0              
-    field_threshold: float = 0.06                   
-    branch_time_window: float = 40.0
-    branch_sensitivity: float = 1.0
-    optimise_initial_branching: bool = True
+    branch_angle_spread: float = 180.0
     leading_branch_prob: float = 0.0
-    allow_internal_branching: bool = True           
+    branch_sensitivity: float = 1.0
+    branch_time_window: float = 40.0
+    secondary_branching: bool = False
+    density_dependend: bool = True
+    field_threshold: float = 0.06                   
+    branching_density: float = 0.06
+    old_nbranch: bool = False
+    optimise_initial_branching: bool = True               
 
     # Tropisms
     autotropism: float = 1.0
@@ -47,7 +51,7 @@ class Options:
     density_field_enabled: bool = True
     density_threshold: float = 0.2
     charge_unit_length: float = 20.0
-    neighbour_radius: float = 20.0
+    neighbour_radius: float = 400.0
     density_from_tips: bool = True
     density_from_branches: bool = True
     density_from_all: bool = True       
