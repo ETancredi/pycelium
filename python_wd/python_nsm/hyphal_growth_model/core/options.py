@@ -25,7 +25,7 @@ class Options:
     min_tip_length: float = 10.0
 
     # Tropisms
-    autotropism: float = 1.0
+    negative_autotropism: float = 1.0
     gravitropism: float = 0.0
     random_walk: float = 0.4
     length_scaled_growth: bool = True
