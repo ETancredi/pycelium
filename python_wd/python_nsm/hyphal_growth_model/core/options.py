@@ -8,6 +8,7 @@ class Options:
     # Core simulation parameters
     growth_rate: float = 1.0
     time_step: float = 1.0
+    default_growth_vector: float = 1.0
 
     # Branching behaviour
     branch_probability: float = 0.4                 
