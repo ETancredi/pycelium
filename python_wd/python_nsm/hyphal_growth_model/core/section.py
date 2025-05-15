@@ -33,18 +33,20 @@ class Section:
     def grow(self, rate: float, dt: float):
         if not self.is_tip or self.is_dead:
             return
-
-        # length‐scaled growth (existing)
+    
+        # length-scaled growth
         if self.options and self.options.length_scaled_growth:
             scale_factor = 1 + self.length * self.options.length_growth_coef
             rate *= scale_factor
     
-        # age‐based slowdown (new)
+        # age-based slowdown (d_age)
         if self.options and hasattr(self.options, "d_age"):
-            # avoid division by zero on brand‐new tips
             age = self.age if self.age > 0 else 1.0
-            # XML’s dAge=1.0 gives linear slowdown: rate /= age**1
             rate /= (age ** self.options.d_age)
+    
+        # default growth vector scaling
+        if self.options and hasattr(self.options, "default_growth_vector"):
+            rate *= self.options.default_growth_vector
     
         # now compute actual growth
         growth_distance = rate * dt
@@ -62,8 +64,8 @@ class Section:
             alpha = self.options.direction_memory_blend
             self.direction_memory = (
                 self.direction_memory.scale(1 - alpha)
-                                  .add(self.orientation.copy().scale(alpha))
-                                  .normalise()
+                                       .add(self.orientation.copy().scale(alpha))
+                                       .normalise()
             )
 
     def update(self):
