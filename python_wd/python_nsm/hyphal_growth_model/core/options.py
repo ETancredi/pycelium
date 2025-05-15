@@ -8,45 +8,44 @@ class Options:
     # Core simulation parameters
     growth_rate: float = 1.0
     time_step: float = 1.0
-    default_growth_vector: float = 1.0
 
     # Branching behaviour
+    branching_master: bool = True
     branch_probability: float = 0.4                 
     max_branches: int = 8                           
-    branch_angle_spread: float = 180.0              
-    field_threshold: float = 0.06                   
-    branch_time_window: float = 40.0
-    branch_sensitivity: float = 1.0
-    optimise_initial_branching: bool = True
+    branch_angle_spread: float = 180.0
     leading_branch_prob: float = 0.0
-    allow_internal_branching: bool = True
-    enforce_min_tip_age: bool = False
-    min_tip_age: float = 10.0
-    enforce_min_tip_length: bool = False
-    min_tip_length: float = 10.0
+    branch_sensitivity: float = 1.0
+    branch_time_window: float = 40.0
+    secondary_branching: bool = False
+    density_dependend: bool = True
+    field_threshold: float = 0.06                   
+    branching_density: float = 0.06
+    old_nbranch: bool = False
+    optimise_initial_branching: bool = True               
 
     # Tropisms
-    negative_autotropism: float = 1.0
+    autotropism: float = 1.0
     gravitropism: float = 0.0
-    random_walk: float = 0.4
+    random_walk: float = 0.2
     length_scaled_growth: bool = True
     length_growth_coef: float = 0.1
     curvature_branch_bias: float = 0.25 
     
     # Directional memory (EMA decay)
-    direction_memory_blend: float = 0.1
+    direction_memory_blend: float = 0.2  
     field_alignment_boost: float = 0.2  
     field_curvature_influence: float = 0.2
 
     # Age & Length limitations
-    die_if_too_long: bool = False
     max_length: float = 50.0            
+    max_age: float = 300.0              
+    min_tip_age: float = 10.0
+    min_tip_length: float = 10.0
     die_if_old: bool = False
-    max_age: float = 300.0   
     die_if_too_dense: bool = True
     min_supported_tips: int = 16
-    max_supported_tips: int = 1000
-    d_age: float = 1.0 # speed of tip ageing (older tips grow and branch slower)
+    max_supported_tips: int = 1000      
 
     # Density field
     density_field_enabled: bool = True
@@ -82,7 +81,7 @@ class Options:
     nutrient_radius: float = 50.0                    
     nutrient_decay: float = 0.05                     
 
-    # Anisotropy
+    # In core/options.py
     anisotropy_enabled: bool = False
     anisotropy_vector: tuple = (1.0, 0.0, 0.0)  
     anisotropy_strength: float = 0.1            
