@@ -149,6 +149,28 @@ class Section:
         self.branches_made += 1
         return child
 
+    def get_new_growing_vector(self, default_strength: float):
+        parent_dir = self.orientation.copy().normalise()
+        max_angle = math.radians(self.options.branch_angle_spread)
+
+        # 1) If optimal orientation is on AND you have a field vector, use that
+        if self.options.optimal_branch_orientation and self.field_aggregator:
+            field_vec, _ = self.field_aggregator.compute_vector(self.end, exclude_ids=[id(self)])
+            if field_vec.length() > 0:
+                return field_vec.normalise().scale(default_strength)
+
+        # 2) Otherwise, sample random directions until within max_angle
+        for _ in range(10):  # up to 10 tries
+            # random rotation around Z‐axis (for a 2D model)
+            theta = np.random.uniform(-self.options.branch_angle_spread, self.options.branch_angle_spread)
+            candidate = parent_dir.copy().rotated_around(MPoint(0,0,1), theta).normalise()
+            # check angle
+            if candidate.angle(parent_dir) <= max_angle:
+                return candidate.scale(default_strength)
+
+        # 3) Fallback: stick with parent direction
+        return parent_dir.scale(default_strength)
+
     def get_subsegments(self):
         return [(s.copy(), e.copy()) for s, e in self.subsegments]
 
