@@ -1,7 +1,8 @@
 # core/section.py
 
-from core.point import MPoint
 import numpy as np
+import math
+from core.point import MPoint
 
 class Section:
     """Represents a single hyphal segment (tip or branch) in the fungal network"""
