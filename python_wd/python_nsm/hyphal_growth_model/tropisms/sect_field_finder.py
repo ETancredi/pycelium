@@ -8,7 +8,7 @@ import numpy as np
 class SectFieldFinder(FieldFinder):
     """
     Emits a field along a Section's line segment.
-    Used for autotropism or self-avoidance.
+    Used for negative autotropism or self-avoidance.
     """
 
     def __init__(self, section: Section, strength: float = 1.0, decay: float = 1.0):
