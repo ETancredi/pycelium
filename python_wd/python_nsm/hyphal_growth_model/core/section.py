@@ -65,70 +65,88 @@ class Section:
     def maybe_branch(self, branch_chance: float, tip_count: int = 0):
         if not self.is_tip or self.is_dead:
             return None
-
+    
+        # 1. Master switch for ALL branching
+        if not self.options.branching_master:
+            return None
+    
+        # 2. Cap on branches per node
         if self.branches_made >= self.options.max_branches:
             return None
-
-        if self.age < self.options.min_tip_age or self.length < self.options.min_tip_length:
+    
+        # 3. Legacy cutoff: if old_nbranch is on, never branch after branch_time_window
+        if self.options.old_nbranch and self.age > self.options.branch_time_window:
             return None
-
-        if self.age > self.options.branch_time_window:
+    
+        # 4. Secondary‐branch gate: only allow children if enabled
+        if self.children and not self.options.secondary_branching:
             return None
-
+    
+        # 5. Hyphal‐density gate (crowding)
+        if self.options.density_dependend:
+            local_density = self.compute_local_hyphal_density(self.options.neighbour_radius)
+            if local_density >= self.options.branching_density:
+                return None
+    
+        # 6. Environmental field gate
         if self.field_aggregator:
-            field_strength, _ = self.field_aggregator.compute_field(self.end, exclude_ids=[id(self)])
+            field_strength, _ = self.field_aggregator.compute_field(
+                self.end, exclude_ids=[id(self)])
             if field_strength >= self.options.field_threshold:
                 return None
-
-        if np.random.rand() < branch_chance:
-            angle = np.random.uniform(-self.options.branch_angle_spread, self.options.branch_angle_spread)
-            axis = MPoint(0, 0, 1)
-            rotated_orientation = self.orientation.copy().rotated_around(axis, angle)
-
-            # 🌀 Curvature bias
-            if self.options.curvature_branch_bias > 0 and len(self.subsegments) >= 3:
-                p1 = self.subsegments[-3][0]
-                p2 = self.subsegments[-2][0]
-                p3 = self.subsegments[-1][1]
-                v1 = p2.copy().subtract(p1).normalise()
-                v2 = p3.copy().subtract(p2).normalise()
-                curve = v2.copy().subtract(v1).normalise()
-
-                rotated_orientation = (
-                    rotated_orientation.copy().scale(1.0 - self.options.curvature_branch_bias)
-                    .add(curve.copy().scale(self.options.curvature_branch_bias))
-                    .normalise()
-                )
-                print(f"🌀 Curvature blended into branch direction: strength={self.options.curvature_branch_bias:.2f}")
-
-
-            # 🧠 Memory-based bias
-            if self.options.direction_memory_blend > 0:
-                rotated_orientation = (
-                    rotated_orientation.copy().scale(1.0 - self.options.direction_memory_blend)
-                    .add(self.direction_memory.copy().scale(self.options.direction_memory_blend))
-                    .normalise()
-                )
-                print(f"🧠 Directional memory blended into branch orientation: alpha={self.options.direction_memory_blend:.2f}")
-
-            keep_self_leading = np.random.rand() < self.options.leading_branch_prob
-            if keep_self_leading:
-                child_orientation = rotated_orientation
-            else:
-                child_orientation = self.orientation.copy()
-                self.orientation = rotated_orientation
-
-            child = Section(self.end.copy(), child_orientation, parent=self)
-            child.is_tip = True
-            child.options = self.options
-            child.direction_memory = self.direction_memory.copy()
-            child.set_field_aggregator(self.field_aggregator)
-
-            self.children.append(child)
-            self.branches_made += 1
-            return child
-
-        return None
+    
+        # 7. Random gate (branch_probability)
+        if np.random.rand() >= self.options.branch_probability:
+            return None
+    
+        # Passed all gates — now actually create the branch
+        angle = np.random.uniform(
+            -self.options.branch_angle_spread,
+             self.options.branch_angle_spread
+        )
+        axis = MPoint(0, 0, 1)
+        rotated_orientation = self.orientation.copy().rotated_around(axis, angle)
+    
+        # 🌀 Curvature bias (existing code)
+        if self.options.curvature_branch_bias > 0 and len(self.subsegments) >= 3:
+            p1 = self.subsegments[-3][0]
+            p2 = self.subsegments[-2][0]
+            p3 = self.subsegments[-1][1]
+            v1 = p2.copy().subtract(p1).normalise()
+            v2 = p3.copy().subtract(p2).normalise()
+            curve = v2.copy().subtract(v1).normalise()
+            rotated_orientation = (
+                rotated_orientation.copy().scale(1 - self.options.curvature_branch_bias)
+                                  .add(curve.copy().scale(self.options.curvature_branch_bias))
+                                  .normalise()
+            )
+    
+        # 🧠 Directional‐memory bias (existing)
+        if self.options.direction_memory_blend > 0:
+            rotated_orientation = (
+                rotated_orientation.copy().scale(1 - self.options.direction_memory_blend)
+                                  .add(self.direction_memory.copy().scale(self.options.direction_memory_blend))
+                                  .normalise()
+            )
+    
+        # 8. Leading‐branch selection
+        keep_self_leading = (np.random.rand() < self.options.leading_branch_prob)
+        if keep_self_leading:
+            child_orientation = rotated_orientation
+        else:
+            child_orientation = self.orientation.copy()
+            self.orientation = rotated_orientation
+    
+        # Instantiate the branch
+        child = Section(self.end.copy(), child_orientation, parent=self)
+        child.is_tip = True
+        child.options = self.options
+        child.direction_memory = self.direction_memory.copy()
+        child.set_field_aggregator(self.field_aggregator)
+    
+        self.children.append(child)
+        self.branches_made += 1
+        return child
 
     def get_subsegments(self):
         return [(s.copy(), e.copy()) for s, e in self.subsegments]
