@@ -69,7 +69,8 @@ class Section:
         if self.branches_made >= self.options.max_branches:
             return None
 
-        if self.age < self.options.min_tip_age or self.length < self.options.min_tip_length:
+        if (self.options.enforce_min_tip_age and self.age < self.options.min_tip_age) \
+           or (self.options.enforce_min_tip_length and self.length < self.options.min_tip_length):
             return None
 
         if self.age > self.options.branch_time_window:
