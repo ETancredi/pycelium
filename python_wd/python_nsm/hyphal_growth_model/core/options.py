@@ -34,6 +34,7 @@ class Options:
     field_curvature_influence: float = 0.2
 
     # Age & Length limitations
+    die_if_too_long: bool = False
     max_length: float = 50.0            
     die_if_old: bool = False
     max_age: float = 300.0              
