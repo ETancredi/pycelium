@@ -13,7 +13,7 @@ from main import step_simulation, setup_simulation, generate_outputs
 class OptionGUI:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("CyberMycelium - Simulator")
+        self.root.title("CyberMycelium Simulator")
         self.options = Options()
         self.entries = {}
 
@@ -56,7 +56,7 @@ class OptionGUI:
                           "branch_time_window", "branch_sensitivity", "optimise_initial_branching", "leading_branch_prob",
                           "allow_internal_branching", "curvature_branch_bias", "branch_curvature_influence",
                           "min_tip_age", "min_tip_length", "max_length", "max_age"],
-            "Tropisms": ["autotropism", "gravitropism", "random_walk", "gravi_angle_start", "gravi_angle_end",
+            "Tropisms": ["negative_autotropism", "gravitropism", "random_walk", "gravi_angle_start", "gravi_angle_end",
                          "gravi_angle_max", "gravi_layer_thickness", "anisotropy_enabled", "anisotropy_vector",
                          "anisotropy_strength", "direction_memory_blend", "field_alignment_boost", "field_curvature_influence"],
             "Density": ["die_if_old", "die_if_too_dense", "density_field_enabled", "density_threshold",
