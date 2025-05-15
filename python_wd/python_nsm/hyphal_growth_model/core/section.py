@@ -34,27 +34,36 @@ class Section:
         if not self.is_tip or self.is_dead:
             return
 
+        # length‐scaled growth (existing)
         if self.options and self.options.length_scaled_growth:
             scale_factor = 1 + self.length * self.options.length_growth_coef
             rate *= scale_factor
-
+    
+        # age‐based slowdown (new)
+        if self.options and hasattr(self.options, "d_age"):
+            # avoid division by zero on brand‐new tips
+            age = self.age if self.age > 0 else 1.0
+            # XML’s dAge=1.0 gives linear slowdown: rate /= age**1
+            rate /= (age ** self.options.d_age)
+    
+        # now compute actual growth
         growth_distance = rate * dt
         delta = self.orientation.copy().scale(growth_distance)
-
+    
         prev_end = self.end.copy()
         self.end.add(delta)
         self.length += growth_distance
         self.age += dt
-
+    
         self.subsegments.append((prev_end, self.end.copy()))
-
+    
         # Update directional memory (EMA-style)
         if self.options and hasattr(self.options, "direction_memory_blend"):
             alpha = self.options.direction_memory_blend
             self.direction_memory = (
                 self.direction_memory.scale(1 - alpha)
-                .add(self.orientation.copy().scale(alpha))
-                .normalise()
+                                  .add(self.orientation.copy().scale(alpha))
+                                  .normalise()
             )
 
     def update(self):
