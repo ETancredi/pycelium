@@ -142,6 +142,45 @@ class Section:
 
         return None
 
+        def get_new_growing_vector(self, default_strength: float):
+        parent = self.orientation.copy().normalise()
+        max_angle_rad = math.radians(self.options.branch_angle_spread)
+
+        # 1) Optimal orientation via field (unchanged)
+        if self.options.optimal_branch_orientation and self.field_aggregator:
+            strength, field_vec = self.field_aggregator.compute_field(
+                self.end, exclude_ids=[id(self)]
+            )
+
+            if field_vec.length() > 0:
+                return field_vec.copy().normalise().scale(default_strength)
+
+        # 2) Sample a random vector within the cone around `parent`
+        #    by sampling uniformly on the spherical cap:
+        #    cos(phi) in [cos(max_angle), 1], azimuth theta in [0, 2π)
+        cos_max = math.cos(max_angle_rad)
+        u = np.random.uniform(cos_max, 1.0)
+        phi = math.acos(u)                     # polar angle from parent_dir
+        theta = np.random.uniform(0, 2 * math.pi)
+    
+        # Build an orthonormal basis (parent, perp1, perp2):
+        # Find a vector not parallel to parent
+        if abs(parent.coords[0]) < 0.9:
+            temp = MPoint(1,0,0)
+        else:
+            temp = MPoint(0,1,0)
+        perp1 = parent.cross(temp).normalise()   # first perpendicular
+        perp2 = parent.cross(perp1).normalise()  # second perpendicular
+    
+        # Spherical‐cap direction:
+        # new_dir = cos(phi)*parent + sin(phi)*(cos(theta)*perp1 + sin(theta)*perp2)
+        part1 = parent.copy().scale(math.cos(phi))
+        part2 = perp1.copy().scale(math.sin(phi) * math.cos(theta))
+        part3 = perp2.copy().scale(math.sin(phi) * math.sin(theta))
+        new_dir = part1.add(part2).add(part3).normalise().scale(default_strength)
+    
+        return new_dir
+    
     def get_subsegments(self):
         return [(s.copy(), e.copy()) for s, e in self.subsegments]
 
