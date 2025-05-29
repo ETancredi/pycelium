@@ -82,7 +82,7 @@ class Section:
         if np.linalg.norm(net.coords) > 0:
             self.orientation = net.normalise()
         # --- End tropism blending ---
-
+        
         # Length‐scaled growth
         if self.options.length_scaled_growth:
             scale_factor = 1 + self.length * self.options.length_growth_coef
@@ -98,12 +98,10 @@ class Section:
         # Actual growth step
         growth_distance = rate * dt
         delta = self.orientation.copy().scale(growth_distance)
-
         prev_end = self.end.copy()
         self.end.add(delta)
         self.length += growth_distance
         self.age += dt
-
         self.subsegments.append((prev_end, self.end.copy()))
 
         # EMA‐style directional memory update
@@ -240,7 +238,6 @@ class Section:
                 temp = MPoint(0, 1, 0)
             perp1 = parent.cross(temp).normalise()
             perp2 = parent.cross(perp1).normalise()
-
             part1 = parent.copy().scale(math.cos(phi))
             part2 = perp1.copy().scale(math.sin(phi) * math.cos(theta))
             part3 = perp2.copy().scale(math.sin(phi) * math.sin(theta))
