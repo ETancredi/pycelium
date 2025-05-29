@@ -4,65 +4,75 @@ from dataclasses import dataclass, field
 from typing import List, Tuple
 
 @dataclass
+class ToggleableFloat:
+    enabled: bool = False
+    value: float = 0.0
+
+@dataclass
+class ToggleableInt:
+    enabled: bool = False
+    value: int = 0
+
+@dataclass
 class Options:
     # Core Simulation
     growth_rate: float = 1.0
     time_step: float = 1.0
-    default_growth_vector: float = 1.0
-    d_age: float = 1.0
+    default_growth_vector: ToggleableFloat = ToggleableFloat(enabled=True, value=1.0)
+    d_age: ToggleableFloat = ToggleableFloat(enabled=True, value=1.0)
 
     # Branching Behavior
     branching_master: bool = True
-    branch_probability: float = 0.4
-    max_branches: int = 8
-    branch_angle_spread: float = 180.0
-    leading_branch_prob: float = 0.0
-    branch_sensitivity: float = 1.0
-    branch_time_window: float = 40.0
+    branch_probability: ToggleableFloat = ToggleableFloat(enabled=True, value=0.4)
+    max_branches: ToggleableInt = ToggleableInt(enabled=True, value=8)
+    branch_angle_spread: ToggleableFloat = ToggleableFloat(enabled=True, value=180.0)
+    leading_branch_prob: ToggleableFloat = ToggleableFloat(enabled=False, value=0.0)
+    branch_sensitivity: ToggleableFloat = ToggleableFloat(enabled=True, value=1.0)
+    branch_time_window: ToggleableFloat = ToggleableFloat(enabled=True, value=40.0)
     old_nbranch: bool = False
     secondary_branching: bool = False
     optimal_branch_orientation: bool = False
 
     # Branch Crowding 
     density_dependend: bool = True
-    branching_density: float = 0.06
+    branching_density: ToggleableFloat = ToggleableFloat(enabled=True, value=0.06)
     complete_evaluation: bool = True
     log_branch_points: bool = False
-    field_threshold: float = 0.06
+    field_threshold: ToggleableFloat = ToggleableFloat(enabled=True, value=0.06)
 
     # Tropisms
-    autotropism: float = 1.0
-    autotropism_impact: float = -1.0
+    autotropism: ToggleableFloat = ToggleableFloat(enabled=True, value=1.0)
+    autotropism_impact: ToggleableFloat = ToggleableFloat(enabled=True, value=-1.0)
     field_hypothesis: bool = True
-    gravitropism: float = 0.0
+    gravitropism: ToggleableFloat = ToggleableFloat(enabled=False, value=1.0)
     random_walk: float = 0.2
 
     # Growth Scaling & Curvature
     length_scaled_growth: bool = True
-    length_growth_coef: float = 0.1
-    curvature_branch_bias: float = 0.25
+    length_growth_coef: ToggleableFloat = ToggleableFloat(enabled=True, value=0.1)
+    curvature_branch_bias: ToggleableFloat = ToggleableFloat(enabled=True, value=0.25)
 
     # Directional Memory
-    direction_memory_blend: float = 0.2
-    field_alignment_boost: float = 0.2
-    field_curvature_influence: float = 0.2
+    direction_memory_blend: ToggleableFloat = ToggleableFloat(enabled=True, value=0.2)
+    field_alignment_boost: ToggleableFloat = ToggleableFloat(enabled=True, value=0.2)
+    field_curvature_influence: ToggleableFloat = ToggleableFloat(enabled=True, value=0.2)
 
     # Age & Length Limits
-    max_length: float = 50.0
-    max_age: float = 300.0
-    min_tip_age: float = 10.0
-    min_tip_length: float = 10.0
+    max_length: ToggleableFloat = ToggleableFloat(enabled=True, value=50.0)
+    max_age: ToggleableFloat = ToggleableFloat(enabled=True, value=300.0)
+    min_tip_age: ToggleableFloat = ToggleableFloat(enabled=True, value=10.0)
+    min_tip_length: ToggleableFloat = ToggleableFloat(enabled=True, value=10.0)
     die_if_old: bool = False
     die_if_too_dense: bool = True
-    min_supported_tips: int = 16
-    max_supported_tips: int = 1000000
-    plagiotropism_tolerance_angle: float = 5.0
+    min_supported_tips: ToggleableInt = ToggleableInt(enabled=True, value=16)
+    max_supported_tips: ToggleableInt = ToggleableInt(enabled=True, value=1000000)
+    plagiotropism_tolerance_angle: ToggleableFloat = ToggleableFloat(enabled=True, value=5.0)
 
     # Density Field
     density_field_enabled: bool = True
-    density_threshold: float = 0.2
-    charge_unit_length: float = 20.0
-    neighbour_radius: float = 400.0
+    density_threshold: ToggleableFloat = ToggleableFloat(enabled=True, value=0.2)
+    charge_unit_length: ToggleableFloat = ToggleableFloat(enabled=True, value=20.0)
+    neighbour_radius: ToggleableFloat = ToggleableFloat(enabled=True, value=400.0)
     density_from_tips: bool = True
     density_from_branches: bool = True
     density_from_all: bool = True
