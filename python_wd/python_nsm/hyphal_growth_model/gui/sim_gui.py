@@ -52,49 +52,27 @@ class OptionGUI:
 
         field_categories = {
             "Core": [
-                "growth_rate", "time_step",
-                "default_growth_vector", "d_age",
-                "seed", "record_dead_tips", "source_config_path"
+                "growth_rate", "time_step", "default_growth_vector", "d_age", "seed", "record_dead_tips", "source_config_path"
             ],
             "Branching": [
-                "branching_master", "branch_probability",
-                "max_branches", "branch_angle_spread",
-                "leading_branch_prob", "branch_sensitivity",
-                "branch_time_window", "old_nbranch",
-                "secondary_branching", "optimal_branch_orientation",
-                "density_dependend", "branching_density",
-                "complete_evaluation", "log_branch_points",
-                "field_threshold",
-                "min_tip_age", "min_tip_length",
-                "max_length", "max_age",
-                "die_if_old", "die_if_too_dense",
-                "min_supported_tips", "max_supported_tips"
+                "branching_master", "branch_probability", "max_branches", "branch_angle_spread", "leading_branch_prob", 
+                "branch_sensitivity", "branch_time_window", "old_nbranch", "secondary_branching", "optimal_branch_orientation",
+                "density_dependend", "branching_density", "complete_evaluation", "log_branch_points", "field_threshold",
+                "min_tip_age", "min_tip_length", "max_length", "max_age", "die_if_old", "die_if_too_dense", "min_supported_tips", 
+                "max_supported_tips"
             ],
             "Tropisms": [
-                "autotropism", "autotropism_impact",
-                "field_hypothesis", "gravitropism",
-                "random_walk",
-                "length_scaled_growth", "length_growth_coef",
-                "curvature_branch_bias",
-                "direction_memory_blend",
-                "field_alignment_boost",
-                "field_curvature_influence",
-                "gravi_angle_start", "gravi_angle_end",
-                "gravi_angle_max", "gravi_layer_thickness",
-                "plagiotropism_tolerance_angle",
-                "anisotropy_enabled", "anisotropy_vector",
-                "anisotropy_strength"
+                "autotropism", "autotropism_impact", "field_hypothesis", "gravitropism", "random_walk", "length_scaled_growth", 
+                "length_growth_coef", "curvature_branch_bias", "direction_memory_blend", "field_alignment_boost",
+                "field_curvature_influence", "gravi_angle_start", "gravi_angle_end", "gravi_angle_max", "gravi_layer_thickness",
+                "plagiotropism_tolerance_angle", "anisotropy_enabled", "anisotropy_vector", "anisotropy_strength"
             ],
             "Density": [
-                "density_field_enabled", "density_threshold",
-                "charge_unit_length", "neighbour_radius",
-                "density_from_tips", "density_from_branches",
-                "density_from_all"
+                "density_field_enabled", "density_threshold", "charge_unit_length", "neighbour_radius", "density_from_tips", 
+                "density_from_branches", "density_from_all"
             ],
             "Nutrient": [
-                "use_nutrient_field",
-                "nutrient_attraction", "nutrient_repulsion",
-                "nutrient_attract_pos", "nutrient_repel_pos",
+                "use_nutrient_field", "nutrient_attraction", "nutrient_repulsion", "nutrient_attract_pos", "nutrient_repel_pos",
                 "nutrient_radius", "nutrient_decay"
             ],
         }
