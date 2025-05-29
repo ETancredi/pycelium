@@ -81,10 +81,18 @@ class Options:
     nutrient_radius: float = 50.0                    
     nutrient_decay: float = 0.05                     
 
-    # In core/options.py
+    # Anisotropy
     anisotropy_enabled: bool = False
     anisotropy_vector: tuple = (1.0, 0.0, 0.0)  
     anisotropy_strength: float = 0.1            
     
     # Reproducibility
     seed: int = 123
+
+    default_growth_vector: float = 1.0
+    d_age: float = 1.0
+    complete_evaluation: bool = True
+    log_branch_points: bool = False
+    field_hypothesis: bool = True
+    autotropism_impact: float = -1.0
+    plagiotropism_tolerance_angle: float = 5.0
