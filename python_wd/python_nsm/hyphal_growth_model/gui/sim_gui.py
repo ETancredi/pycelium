@@ -6,9 +6,10 @@ from threading import Thread
 import time
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from core.options import Options
+
+from core.options import Options, ToggleableFloat, ToggleableInt
 from core.point import MPoint
-from main import step_simulation, setup_simulation, generate_outputs
+from main import setup_simulation, step_simulation, generate_outputs
 
 class OptionGUI:
     def __init__(self):
@@ -25,7 +26,7 @@ class OptionGUI:
 
         self.max_steps_var = tk.StringVar(value="100")
         self.max_tips_var = tk.StringVar(value="1000")
-        self.output_folder = tk.StringVar(value="outputs")  
+        self.output_folder = tk.StringVar(value="outputs")
 
         self.fig = plt.Figure(figsize=(5, 5))
         self.ax = self.fig.add_subplot(111, projection="3d")
@@ -44,77 +45,129 @@ class OptionGUI:
             "Tropisms": ttk.Frame(notebook),
             "Density": ttk.Frame(notebook),
             "Nutrient": ttk.Frame(notebook),
-            "Run": ttk.Frame(notebook)
+            "Run": ttk.Frame(notebook),
         }
+        for name, frame in tabs.items():
+            notebook.add(frame, text=name)
 
-        for name, tab in tabs.items():
-            notebook.add(tab, text=name)
-
+        # Match exactly your Options grouping
         field_categories = {
             "Core": [
-                "growth_rate", "time_step", "default_growth_vector", "d_age", "seed", "record_dead_tips", "source_config_path"
+                "growth_rate", "time_step",
+                "default_growth_vector", "d_age",
+                "seed", "record_dead_tips", "source_config_path"
             ],
             "Branching": [
-                "branching_master", "branch_probability", "max_branches", "branch_angle_spread", "leading_branch_prob", 
-                "branch_sensitivity", "branch_time_window", "old_nbranch", "secondary_branching", "optimal_branch_orientation",
-                "density_dependend", "branching_density", "complete_evaluation", "log_branch_points", "field_threshold",
-                "min_tip_age", "min_tip_length", "max_length", "max_age", "die_if_old", "die_if_too_dense", "min_supported_tips", 
-                "max_supported_tips"
+                "branching_master",
+                "branch_probability", "max_branches", "branch_angle_spread",
+                "leading_branch_prob", "branch_sensitivity", "branch_time_window",
+                "old_nbranch", "secondary_branching", "optimal_branch_orientation",
+                "density_dependend", "branching_density",
+                "complete_evaluation", "log_branch_points",
+                "field_threshold",
+                "min_tip_age", "min_tip_length",
+                "max_length", "max_age",
+                "die_if_old", "die_if_too_dense",
+                "min_supported_tips", "max_supported_tips"
             ],
             "Tropisms": [
-                "autotropism", "autotropism_impact", "field_hypothesis", "gravitropism", "random_walk", "length_scaled_growth", 
-                "length_growth_coef", "curvature_branch_bias", "direction_memory_blend", "field_alignment_boost",
-                "field_curvature_influence", "gravi_angle_start", "gravi_angle_end", "gravi_angle_max", "gravi_layer_thickness",
-                "plagiotropism_tolerance_angle", "anisotropy_enabled", "anisotropy_vector", "anisotropy_strength"
+                "autotropism", "autotropism_impact", "field_hypothesis",
+                "gravitropism", "random_walk",
+                "length_scaled_growth", "length_growth_coef",
+                "curvature_branch_bias",
+                "direction_memory_blend", "field_alignment_boost",
+                "field_curvature_influence",
+                "gravi_angle_start", "gravi_angle_end",
+                "gravi_angle_max", "gravi_layer_thickness",
+                "plagiotropism_tolerance",
+                "anisotropy_enabled", "anisotropy_vector",
+                "anisotropy_strength"
             ],
             "Density": [
-                "density_field_enabled", "density_threshold", "charge_unit_length", "neighbour_radius", "density_from_tips", 
-                "density_from_branches", "density_from_all"
+                "density_field_enabled", "density_threshold",
+                "charge_unit_length", "neighbour_radius",
+                "density_from_tips", "density_from_branches",
+                "density_from_all"
             ],
             "Nutrient": [
-                "use_nutrient_field", "nutrient_attraction", "nutrient_repulsion", "nutrient_attract_pos", "nutrient_repel_pos",
+                "use_nutrient_field",
+                "nutrient_attraction", "nutrient_repulsion",
+                "nutrient_attract_pos", "nutrient_repel_pos",
                 "nutrient_radius", "nutrient_decay"
             ],
         }
+
         for category, fields in field_categories.items():
             frame = tabs[category]
-            row = 0
-            for field in fields:
+            for row, field in enumerate(fields):
                 if not hasattr(self.options, field):
                     continue
                 val = getattr(self.options, field)
+
                 ttk.Label(frame, text=field).grid(column=0, row=row, sticky="w")
-                if isinstance(val, bool):
+
+                # ToggleableFloat → checkbox + float entry
+                if isinstance(val, ToggleableFloat):
+                    bool_var = tk.BooleanVar(value=val.enabled)
+                    chk = ttk.Checkbutton(frame, variable=bool_var)
+                    chk.grid(column=1, row=row)
+                    num_var = tk.StringVar(value=str(val.value))
+                    entry = ttk.Entry(frame, textvariable=num_var, width=12)
+                    entry.grid(column=2, row=row, padx=(5,0))
+                    # enable/disable entry
+                    def toggle_f(_=None, e=entry, b=bool_var):
+                        e.config(state="normal" if b.get() else "disabled")
+                    bool_var.trace_add("write", toggle_f)
+                    toggle_f()
+                    self.entries[field] = (bool_var, num_var)
+
+                # ToggleableInt → checkbox + int entry
+                elif isinstance(val, ToggleableInt):
+                    bool_var = tk.BooleanVar(value=val.enabled)
+                    chk = ttk.Checkbutton(frame, variable=bool_var)
+                    chk.grid(column=1, row=row)
+                    num_var = tk.StringVar(value=str(val.value))
+                    entry = ttk.Entry(frame, textvariable=num_var, width=12)
+                    entry.grid(column=2, row=row, padx=(5,0))
+                    # enable/disable entry
+                    def toggle_i(_=None, e=entry, b=bool_var):
+                        e.config(state="normal" if b.get() else "disabled")
+                    bool_var.trace_add("write", toggle_i)
+                    toggle_i()
+                    self.entries[field] = (bool_var, num_var)
+
+                # Plain bool
+                elif isinstance(val, bool):
                     var = tk.BooleanVar(value=val)
-                    ttk.Checkbutton(frame, variable=var).grid(column=1, row=row)
+                    chk = ttk.Checkbutton(frame, variable=var)
+                    chk.grid(column=1, row=row)
+                    self.entries[field] = var
+
+                # Everything else (float, int, str)
                 else:
                     var = tk.StringVar(value=str(val))
-                    ttk.Entry(frame, textvariable=var, width=18).grid(column=1, row=row)
-                self.entries[field] = var
-                row += 1
+                    entry = ttk.Entry(frame, textvariable=var, width=18)
+                    entry.grid(column=1, row=row)
+                    self.entries[field] = var
 
-        # Nutrient popup
-        Button(tabs["Nutrient"], text="🧪 Nutrient Editor", command=self.open_nutrient_editor).grid(column=0, row=row+1, columnspan=2)
+        # Nutrient Editor button
+        Button(tabs["Nutrient"], text="🧪 Nutrient Editor",
+               command=self.open_nutrient_editor).grid(column=0, row=len(field_categories["Nutrient"])+1, columnspan=2)
 
-        # Run tab
-        sim_tab = tabs["Run"]
-        ttk.Label(sim_tab, text="Max Steps").grid(column=0, row=0, sticky="e")
-        ttk.Entry(sim_tab, textvariable=self.max_steps_var, width=10).grid(column=1, row=0)
-        ttk.Label(sim_tab, text="Max Tips").grid(column=0, row=1, sticky="e")
-        ttk.Entry(sim_tab, textvariable=self.max_tips_var, width=10).grid(column=1, row=1)
-
-        # Output folder entry and browser
-        ttk.Label(sim_tab, text="Output Folder").grid(column=0, row=2, sticky="e")
-        ttk.Entry(sim_tab, textvariable=self.output_folder, width=20).grid(column=1, row=2)
-        ttk.Button(sim_tab, text="Browse", command=self.browse_folder).grid(column=2, row=2, padx=5)
-
-        ttk.Button(sim_tab, text="Start Simulation", command=self.start_sim).grid(column=0, row=3, columnspan=2, pady=8)
-        ttk.Button(sim_tab, text="Pause / Resume", command=self.toggle_pause).grid(column=0, row=4, columnspan=2)
-
-        self.metrics_label = ttk.Label(sim_tab, text="Step: 0 | Tips: 0 | Total: 0")
+        # Run tab (unchanged layout)
+        run_tab = tabs["Run"]
+        ttk.Label(run_tab, text="Max Steps").grid(column=0, row=0, sticky="e")
+        ttk.Entry(run_tab, textvariable=self.max_steps_var, width=10).grid(column=1, row=0)
+        ttk.Label(run_tab, text="Max Tips").grid(column=0, row=1, sticky="e")
+        ttk.Entry(run_tab, textvariable=self.max_tips_var, width=10).grid(column=1, row=1)
+        ttk.Label(run_tab, text="Output Folder").grid(column=0, row=2, sticky="e")
+        ttk.Entry(run_tab, textvariable=self.output_folder, width=20).grid(column=1, row=2)
+        ttk.Button(run_tab, text="Browse", command=self.browse_folder).grid(column=2, row=2, padx=5)
+        ttk.Button(run_tab, text="Start Simulation", command=self.start_sim).grid(column=0, row=3, columnspan=2, pady=8)
+        ttk.Button(run_tab, text="Pause / Resume", command=self.toggle_pause).grid(column=0, row=4, columnspan=2)
+        self.metrics_label = ttk.Label(run_tab, text="Step: 0 | Tips: 0 | Total: 0")
         self.metrics_label.grid(column=0, row=5, columnspan=2, pady=5)
-
-        self.canvas = FigureCanvasTkAgg(self.fig, master=sim_tab)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=run_tab)
         self.canvas.get_tk_widget().grid(row=0, column=3, rowspan=8, padx=20, pady=10)
 
     def browse_folder(self):
@@ -125,18 +178,39 @@ class OptionGUI:
     def get_options(self):
         for key, var in self.entries.items():
             val = getattr(self.options, key)
-            try:
-                if isinstance(val, bool):
-                    parsed = var.get() in ("1", "true", "True")
-                elif isinstance(val, float) or '.' in var.get():
-                    parsed = float(var.get())
-                elif isinstance(val, tuple):
-                    parsed = tuple(map(float, var.get().strip("()").split(",")))
-                else:
-                    parsed = int(var.get())
-            except Exception:
-                parsed = val
-            setattr(self.options, key, parsed)
+
+            # Unwrap ToggleableFloat
+            if isinstance(val, ToggleableFloat):
+                bool_var, num_var = var
+                val.enabled = bool_var.get()
+                try:
+                    val.value = float(num_var.get())
+                except ValueError:
+                    pass
+                continue
+
+            # Unwrap ToggleableInt
+            if isinstance(val, ToggleableInt):
+                bool_var, num_var = var
+                val.enabled = bool_var.get()
+                try:
+                    val.value = int(num_var.get())
+                except ValueError:
+                    pass
+                continue
+
+            # Plain bool
+            if isinstance(val, bool):
+                setattr(self.options, key, var.get() in ("1", "true", "True"))
+            else:
+                # Try float then int fallback
+                s = var.get()
+                try:
+                    parsed = float(s) if "." in s or isinstance(val, float) else int(s)
+                except ValueError:
+                    parsed = val
+                setattr(self.options, key, parsed)
+
         return self.options
 
     def open_nutrient_editor(self):
