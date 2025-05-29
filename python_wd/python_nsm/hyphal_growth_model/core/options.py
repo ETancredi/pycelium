@@ -15,75 +15,131 @@ class ToggleableInt:
 
 @dataclass
 class Options:
-    # Core Simulation
+    # ─── Core Simulation ───
     growth_rate: float = 1.0
     time_step: float = 1.0
-    default_growth_vector: ToggleableFloat = ToggleableFloat(enabled=True, value=1.0)
-    d_age: ToggleableFloat = ToggleableFloat(enabled=True, value=1.0)
+    default_growth_vector: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=1.0)
+    )
+    d_age: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=1.0)
+    )
 
-    # Branching Behavior
+    # ─── Branching Behavior ───
     branching_master: bool = True
-    branch_probability: ToggleableFloat = ToggleableFloat(enabled=True, value=0.4)
-    max_branches: ToggleableInt = ToggleableInt(enabled=True, value=8)
-    branch_angle_spread: ToggleableFloat = ToggleableFloat(enabled=True, value=180.0)
-    leading_branch_prob: ToggleableFloat = ToggleableFloat(enabled=False, value=0.0)
-    branch_sensitivity: ToggleableFloat = ToggleableFloat(enabled=True, value=1.0)
-    branch_time_window: ToggleableFloat = ToggleableFloat(enabled=True, value=40.0)
+    branch_probability: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=0.4)
+    )
+    max_branches: ToggleableInt = field(
+        default_factory=lambda: ToggleableInt(enabled=True, value=8)
+    )
+    branch_angle_spread: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=180.0)
+    )
+    leading_branch_prob: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=False, value=0.0)
+    )
+    branch_sensitivity: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=1.0)
+    )
+    branch_time_window: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=40.0)
+    )
     old_nbranch: bool = False
     secondary_branching: bool = False
     optimal_branch_orientation: bool = False
 
-    # Branch Crowding 
+    # ─── Branch Crowding ───
     density_dependend: bool = True
-    branching_density: ToggleableFloat = ToggleableFloat(enabled=True, value=0.06)
+    branching_density: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=0.06)
+    )
     complete_evaluation: bool = True
     log_branch_points: bool = False
-    field_threshold: ToggleableFloat = ToggleableFloat(enabled=True, value=0.06)
+    field_threshold: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=0.06)
+    )
 
-    # Tropisms
-    autotropism: ToggleableFloat = ToggleableFloat(enabled=True, value=1.0)
-    autotropism_impact: ToggleableFloat = ToggleableFloat(enabled=True, value=-1.0)
+    # ─── Tropisms ───
+    autotropism: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=1.0)
+    )
+    autotropism_impact: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=-1.0)
+    )
     field_hypothesis: bool = True
-    gravitropism: ToggleableFloat = ToggleableFloat(enabled=False, value=1.0)
+    gravitropism: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=False, value=1.0)
+    )
     random_walk: float = 0.2
 
-    # Growth Scaling & Curvature
+    # ─── Growth Scaling & Curvature ───
     length_scaled_growth: bool = True
-    length_growth_coef: ToggleableFloat = ToggleableFloat(enabled=True, value=0.1)
-    curvature_branch_bias: ToggleableFloat = ToggleableFloat(enabled=True, value=0.25)
+    length_growth_coef: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=0.1)
+    )
+    curvature_branch_bias: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=0.25)
+    )
 
-    # Directional Memory
-    direction_memory_blend: ToggleableFloat = ToggleableFloat(enabled=True, value=0.2)
-    field_alignment_boost: ToggleableFloat = ToggleableFloat(enabled=True, value=0.2)
-    field_curvature_influence: ToggleableFloat = ToggleableFloat(enabled=True, value=0.2)
+    # ─── Directional Memory ───
+    direction_memory_blend: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=0.2)
+    )
+    field_alignment_boost: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=0.2)
+    )
+    field_curvature_influence: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=0.2)
+    )
 
-    # Age & Length Limits
-    max_length: ToggleableFloat = ToggleableFloat(enabled=True, value=50.0)
-    max_age: ToggleableFloat = ToggleableFloat(enabled=True, value=300.0)
-    min_tip_age: ToggleableFloat = ToggleableFloat(enabled=True, value=10.0)
-    min_tip_length: ToggleableFloat = ToggleableFloat(enabled=True, value=10.0)
+    # ─── Age & Length Limits ───
+    max_length: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=50.0)
+    )
+    max_age: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=300.0)
+    )
+    min_tip_age: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=10.0)
+    )
+    min_tip_length: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=10.0)
+    )
     die_if_old: bool = False
     die_if_too_dense: bool = True
-    min_supported_tips: ToggleableInt = ToggleableInt(enabled=True, value=16)
-    max_supported_tips: ToggleableInt = ToggleableInt(enabled=True, value=1000000)
-    plagiotropism_tolerance_angle: ToggleableFloat = ToggleableFloat(enabled=True, value=5.0)
+    min_supported_tips: ToggleableInt = field(
+        default_factory=lambda: ToggleableInt(enabled=True, value=16)
+    )
+    max_supported_tips: ToggleableInt = field(
+        default_factory=lambda: ToggleableInt(enabled=True, value=1000000)
+    )
+    plagiotropism_tolerance: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=5.0)
+    )
 
-    # Density Field
+    # ─── Density Field (Env’t) ───
     density_field_enabled: bool = True
-    density_threshold: ToggleableFloat = ToggleableFloat(enabled=True, value=0.2)
-    charge_unit_length: ToggleableFloat = ToggleableFloat(enabled=True, value=20.0)
-    neighbour_radius: ToggleableFloat = ToggleableFloat(enabled=True, value=400.0)
+    density_threshold: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=0.2)
+    )
+    charge_unit_length: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=20.0)
+    )
+    neighbour_radius: ToggleableFloat = field(
+        default_factory=lambda: ToggleableFloat(enabled=True, value=400.0)
+    )
     density_from_tips: bool = True
     density_from_branches: bool = True
     density_from_all: bool = True
 
-    # Gravitropic Curvature
+    # ─── Gravitropic Curvature ───
     gravi_angle_start: float = 100.0
     gravi_angle_end: float = 500.0
     gravi_angle_max: float = 180.0
     gravi_layer_thickness: float = 40.0
 
-    # Nutrient Fields
+    # ─── Nutrient Fields ───
     use_nutrient_field: bool = False
     nutrient_attraction: float = 0.0
     nutrient_repulsion: float = 0.0
@@ -91,18 +147,21 @@ class Options:
     nutrient_repel_pos: str = "-20,-20,0"
     nutrient_radius: float = 50.0
     nutrient_decay: float = 0.05
-    nutrient_attractors: List[Tuple[Tuple[float,float,float], float]] = field(default_factory=lambda: [((30, 30, 0), 1.0)])
-    nutrient_repellents: List[Tuple[Tuple[float,float,float], float]] = field(default_factory=lambda: [((-20, -20, 0), -1.0)])
+    nutrient_attractors: List[Tuple[Tuple[float, float, float], float]] = field(
+        default_factory=lambda: [((30, 30, 0), 1.0)]
+    )
+    nutrient_repellents: List[Tuple[Tuple[float, float, float], float]] = field(
+        default_factory=lambda: [((-20, -20, 0), -1.0)]
+    )
 
-    # Anisotropy
+    # ─── Anisotropy ───
     anisotropy_enabled: bool = False
-    anisotropy_vector: Tuple[float,float,float] = (1.0, 0.0, 0.0)
+    anisotropy_vector: Tuple[float, float, float] = (1.0, 0.0, 0.0)
     anisotropy_strength: float = 0.1
 
-    # Debugging & I/O
+    # ─── Debugging & I/O ───
     record_dead_tips: bool = True
     source_config_path: str = ""
 
-    # Reproducibility
+    # ─── Reproducibility ───
     seed: int = 123
-    
