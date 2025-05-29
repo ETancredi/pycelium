@@ -24,7 +24,8 @@ class Options:
     field_threshold: float = 0.06                   
     branching_density: float = 0.06
     old_nbranch: bool = False
-    optimise_initial_branching: bool = True               
+    optimise_initial_branching: bool = True  
+    optimal_branch_orientation: bool = False
 
     # Tropisms
     autotropism: float = 1.0
