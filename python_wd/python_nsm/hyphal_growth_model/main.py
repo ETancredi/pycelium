@@ -66,6 +66,12 @@ def setup_simulation(opts):
     aggregator = FieldAggregator()
     aggregator.set_options(opts)
 
+    # Build shared Orientator & FieldAggregator
+    orientator = Orientator(opts)
+    aggregator = FieldAggregator()
+    aggregator.set_options(opts)
+
+    # Optional nutrient fields
     if opts.nutrient_attraction > 0:
         aggregator.add_finder(NutrientFieldFinder(
             MPoint(30, 30, 0),
@@ -83,14 +89,22 @@ def setup_simulation(opts):
 
     orientator.set_field_source(aggregator)
 
+    # Density-grid for environmental avoidance
     grid = DensityGrid(width=100, height=100, resolution=1.0)
     orientator.set_density_grid(grid)
 
+    # Optional anisotropy
     anisotropy_grid = None
     if opts.anisotropy_enabled:
         anisotropy_grid = AnisotropyGrid(width=100, height=100, depth=100, resolution=10.0)
         anisotropy_grid.set_uniform_direction(MPoint(*opts.anisotropy_vector))
         orientator.set_anisotropy_grid(anisotropy_grid)
+
+    # Assign both aggregator & orientator to all existing sections
+    for sec in mycel.get_all_segments():
+        sec.options = opts
+        sec.set_field_aggregator(aggregator)
+        sec.set_orientator(orientator)
 
     output_dir = os.getenv("BATCH_OUTPUT_DIR", "outputs")
     print(f"🔍 BATCH_OUTPUT_DIR is: {output_dir}")
@@ -112,7 +126,6 @@ def setup_simulation(opts):
         "anisotropy_grid": anisotropy_grid
     }
 
-
 def step_simulation(mycel, components, step):
     aggregator = components["aggregator"]
     grid = components["grid"]
@@ -124,13 +137,12 @@ def step_simulation(mycel, components, step):
     opts = components["opts"]
 
     print(f"\n🔄 STEP {step}")
+    
     aggregator.sources.clear()
     aggregator.add_sections(mycel.get_all_segments(), strength=1.0, decay=1.5)
 
-    for tip in mycel.get_tips():
-        tip.orientation = orientator.compute(tip)
-
     mycel.step()
+    
     grid.update_from_mycel(mycel)
 
     if opts.use_nutrient_field and opts.nutrient_repulsion > 0:
