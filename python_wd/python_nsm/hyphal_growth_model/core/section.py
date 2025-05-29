@@ -26,6 +26,7 @@ class Section:
 
         self.options = None
         self.field_aggregator = None
+        self.orientator = None    # NEW: holds shared Orientator instance
 
         self.direction_memory = self.orientation.copy()
 
@@ -60,16 +61,16 @@ class Section:
         if self.orientator:
             self.orientation = self.orientator.compute(self)
 
-        # 2. Length‐scaled growth
+        # 2. Length-scaled growth
         if self.options.length_scaled_growth:
             scale_factor = 1 + self.length * self.options.length_growth_coef
             rate *= scale_factor
 
-        # 3. Age‐based slowdown (d_age)
+        # 3. Age-based slowdown (d_age)
         age = self.age if self.age > 0 else 1.0
         rate /= (age ** self.options.d_age)
 
-        # 4. Default growth‐vector scaling
+        # 4. Default growth-vector scaling
         rate *= self.options.default_growth_vector
 
         # 5. Actual growth step
@@ -82,14 +83,15 @@ class Section:
         self.age += dt
         self.subsegments.append((prev_end, self.end.copy()))
 
-        # 6. EMA‐style directional memory update
+        # 6. EMA-style directional memory update
         alpha = self.options.direction_memory_blend
         self.direction_memory = (
-            self.direction_memory.scale(1 - alpha)
-                                   .add(self.orientation.copy().scale(alpha))
-                                   .normalise()
+            self.direction_memory
+                .scale(1 - alpha)
+                .add(self.orientation.copy().scale(alpha))
+                .normalise()
         )
-    
+
     def update(self):
         self.length = self.start.distance_to(self.end)
         if self.length < 1e-5:
@@ -107,7 +109,7 @@ class Section:
         if self.branches_made >= self.options.max_branches:
             return None
 
-        # 3. Legacy‐mode cutoff
+        # 3. Legacy-mode cutoff
         if self.options.old_nbranch and self.age > self.options.branch_time_window:
             return None
 
@@ -115,13 +117,13 @@ class Section:
         if self.children and not self.options.secondary_branching:
             return None
 
-        # 5. Hyphal‐crowding gate
+        # 5. Hyphal-crowding gate
         if self.options.density_dependend:
             local_density = self.compute_local_hyphal_density(self.options.neighbour_radius)
             if local_density >= self.options.branching_density:
                 return None
 
-        # 6. Environmental‐field gate (max over tip/subsegments/branch point)
+        # 6. Environmental-field gate (max over tip/subsegments/branch point)
         if self.field_aggregator:
             points = (
                 [end for _, end in self.subsegments]
@@ -131,8 +133,10 @@ class Section:
             if self.options.log_branch_points and len(self.subsegments) > 1:
                 points.append(self.subsegments[1][0])
 
-            strengths = [self.field_aggregator.compute_field(pt, exclude_ids=[id(self)])[0]
-                         for pt in points]
+            strengths = [
+                self.field_aggregator.compute_field(pt, exclude_ids=[id(self)])[0]
+                for pt in points
+            ]
             if max(strengths) >= self.options.field_threshold:
                 return None
 
@@ -145,7 +149,7 @@ class Section:
             self.options.default_growth_vector
         )
 
-        # 🌀 Curvature bias (unchanged)
+        # 🌀 Curvature bias
         if self.options.curvature_branch_bias > 0 and len(self.subsegments) >= 3:
             p1 = self.subsegments[-3][0]
             p2 = self.subsegments[-2][0]
@@ -154,20 +158,24 @@ class Section:
             v2 = p3.copy().subtract(p2).normalise()
             curve = v2.copy().subtract(v1).normalise()
             rotated_orientation = (
-                rotated_orientation.copy().scale(1 - self.options.curvature_branch_bias)
-                                    .add(curve.copy().scale(self.options.curvature_branch_bias))
-                                    .normalise()
+                rotated_orientation
+                    .copy()
+                    .scale(1 - self.options.curvature_branch_bias)
+                    .add(curve.copy().scale(self.options.curvature_branch_bias))
+                    .normalise()
             )
 
-        # 🧠 Directional‐memory bias (unchanged)
+        # 🧠 Directional-memory bias
         if self.options.direction_memory_blend > 0:
             rotated_orientation = (
-                rotated_orientation.copy().scale(1 - self.options.direction_memory_blend)
-                                    .add(self.direction_memory.copy().scale(self.options.direction_memory_blend))
-                                    .normalise()
+                rotated_orientation
+                    .copy()
+                    .scale(1 - self.options.direction_memory_blend)
+                    .add(self.direction_memory.copy().scale(self.options.direction_memory_blend))
+                    .normalise()
             )
 
-        # 9. Leading‐branch selection
+        # 9. Leading-branch selection
         keep_self_leading = (np.random.rand() < self.options.leading_branch_prob)
         if keep_self_leading:
             child_orientation = rotated_orientation
@@ -175,12 +183,12 @@ class Section:
             child_orientation = self.orientation.copy()
             self.orientation = rotated_orientation
 
-        # Instantiate and return the new branch
         child = Section(self.end.copy(), child_orientation, parent=self)
         child.is_tip = True
         child.options = self.options
         child.direction_memory = self.direction_memory.copy()
         child.set_field_aggregator(self.field_aggregator)
+        child.set_orientator(self.orientator)
 
         self.children.append(child)
         self.branches_made += 1
@@ -209,29 +217,28 @@ class Section:
             phi = math.acos(u)
             theta = np.random.uniform(0, 2 * math.pi)
 
-            # Build orthonormal basis (parent, perp1, perp2)
             if abs(parent.coords[0]) < 0.9:
                 temp = MPoint(1, 0, 0)
             else:
                 temp = MPoint(0, 1, 0)
             perp1 = parent.cross(temp).normalise()
             perp2 = parent.cross(perp1).normalise()
+
             part1 = parent.copy().scale(math.cos(phi))
             part2 = perp1.copy().scale(math.sin(phi) * math.cos(theta))
             part3 = perp2.copy().scale(math.sin(phi) * math.sin(theta))
             new_dir = part1.add(part2).add(part3).normalise().scale(default_strength)
 
-        # --- Plagiotropism tolerance ---
-        # Clamp to pure downward if too far from vertical
+        # Plagiotropism tolerance
         tol_rad = math.radians(self.options.plagiotropism_tolerance_angle)
-        # true “down” is –Z
         vertical = MPoint(0, 0, -1).normalise()
         cosang = new_dir.dot(vertical)
         cosang = max(-1.0, min(1.0, cosang))
         if math.acos(cosang) > tol_rad:
             new_dir = vertical.scale(default_strength)
+
         return new_dir
-        
+
     def get_subsegments(self):
         return [(s.copy(), e.copy()) for s, e in self.subsegments]
 
