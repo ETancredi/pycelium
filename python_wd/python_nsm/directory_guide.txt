@@ -1,5 +1,5 @@
 hyphal_growth_model_v3/
-├── main.py                      	# Entry point for simulation logic (CLI/GUI/ runs call this)
+├── main.py                      	# Entry point for simulation logic (CLI/GUI/batch runs call this)
 │
 ├── config/                      	# Holds simulation configuration files
 │   ├── sim_config.py            		# Defines the Options dataclass & config loading
