@@ -1,17 +1,17 @@
 # tropisms/sect_field_finder.py
 
+from __future__ import annotations
 from tropisms.field_finder import FieldFinder
 from core.point import MPoint
-from core.section import Section
 import numpy as np
 
 class SectFieldFinder(FieldFinder):
     """
     Emits a field along a Section's line segment.
-    Used for negative autotropism or self-avoidance.
+    Used for autotropism or self-avoidance.
     """
 
-    def __init__(self, section: Section, strength: float = 1.0, decay: float = 1.0):
+    def __init__(self, section: "Section", strength: float = 1.0, decay: float = 1.0):
         self.section = section
         self.strength = strength
         self.decay = decay
@@ -37,6 +37,7 @@ class SectFieldFinder(FieldFinder):
         a = self.section.start.as_array()
         b = self.section.end.as_array()
         p = point.as_array()
+
         ab = b - a
         ap = p - a
         denom = np.dot(ab, ab)
