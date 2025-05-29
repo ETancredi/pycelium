@@ -8,6 +8,8 @@ class Options:
     # Core simulation parameters
     growth_rate: float = 1.0
     time_step: float = 1.0
+    default_growth_vector: float = 1.0
+    d_age: float = 1.0
 
     # Branching behaviour
     branching_master: bool = True
@@ -89,8 +91,6 @@ class Options:
     # Reproducibility
     seed: int = 123
 
-    default_growth_vector: float = 1.0
-    d_age: float = 1.0
     complete_evaluation: bool = True
     log_branch_points: bool = False
     field_hypothesis: bool = True
