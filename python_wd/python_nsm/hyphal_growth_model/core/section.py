@@ -32,6 +32,10 @@ class Section:
     def set_field_aggregator(self, aggregator):
         self.field_aggregator = aggregator
 
+    def set_orientator(self, orientator):
+        """Assign the shared Orientator for tropism blending."""
+        self.orientator = orientator
+
     def compute_local_hyphal_density(self, radius: float) -> float:
         """
         Continuous crowding metric: sum the decaying-field contributions 
@@ -52,66 +56,40 @@ class Section:
         if not self.is_tip or self.is_dead:
             return
 
-        # --- Tropism blending into self.orientation ---
-        net = MPoint(0, 0, 0)
+        # 1. Central tropism/orientator-driven orientation
+        if self.orientator:
+            self.orientation = self.orientator.compute(self)
 
-        # 1. Autotropism along own axis
-        if self.options.autotropism != 0:
-            net.add(
-                self.orientation.copy()
-                                .scale(self.options.autotropism * self.options.autotropism_impact)
-            )
-
-        # 2. FieldHypothesis toward/away from field gradient
-        if self.options.field_hypothesis and self.field_aggregator:
-            strength, grad = self.field_aggregator.compute_field(
-                self.end, exclude_ids=[id(self)]
-            )
-            net.add(grad.copy().scale(strength))
-
-        # 3. Gravitropism: constant pull along –Z
-        if self.options.gravitropism != 0:
-            net.add(MPoint(0, 0, -1).scale(self.options.gravitropism))
-
-        # 4. Random walk jitter
-        if self.options.random_walk > 0:
-            rv = MPoint(*np.random.randn(3)).normalise().scale(self.options.random_walk)
-            net.add(rv)
-
-        # Apply new orientation if any tropism contributed
-        if np.linalg.norm(net.coords) > 0:
-            self.orientation = net.normalise()
-        # --- End tropism blending ---
-        
-        # Length‐scaled growth
+        # 2. Length‐scaled growth
         if self.options.length_scaled_growth:
             scale_factor = 1 + self.length * self.options.length_growth_coef
             rate *= scale_factor
 
-        # Age‐based slowdown (d_age)
+        # 3. Age‐based slowdown (d_age)
         age = self.age if self.age > 0 else 1.0
         rate /= (age ** self.options.d_age)
 
-        # Default growth‐vector scaling
+        # 4. Default growth‐vector scaling
         rate *= self.options.default_growth_vector
 
-        # Actual growth step
+        # 5. Actual growth step
         growth_distance = rate * dt
         delta = self.orientation.copy().scale(growth_distance)
+
         prev_end = self.end.copy()
         self.end.add(delta)
         self.length += growth_distance
         self.age += dt
         self.subsegments.append((prev_end, self.end.copy()))
 
-        # EMA‐style directional memory update
+        # 6. EMA‐style directional memory update
         alpha = self.options.direction_memory_blend
         self.direction_memory = (
             self.direction_memory.scale(1 - alpha)
                                    .add(self.orientation.copy().scale(alpha))
                                    .normalise()
         )
-
+    
     def update(self):
         self.length = self.start.distance_to(self.end)
         if self.length < 1e-5:
@@ -252,8 +230,8 @@ class Section:
         cosang = max(-1.0, min(1.0, cosang))
         if math.acos(cosang) > tol_rad:
             new_dir = vertical.scale(default_strength)
-
         return new_dir
+        
     def get_subsegments(self):
         return [(s.copy(), e.copy()) for s, e in self.subsegments]
 
