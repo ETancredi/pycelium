@@ -5,6 +5,7 @@ matplotlib.use("Agg")
 import sys
 import os
 import random
+import math
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -48,7 +49,18 @@ def setup_simulation(opts):
         print("🌱 No seed specified; using system randomness.")
 
     mycel = Mycel(opts)
-    mycel.seed(MPoint(0, 0, 0), MPoint(0, 1, 0))
+
+    def random_point_on_sphere(radius):
+        theta = random.uniform(0,2 * math.pi)
+        phi = math.acos(random.uniform(-1,1))
+        x = radius * math.sin(phi) * math.cos(theta)
+        y = radius * math.sin(phi) * math.sin(theta)
+        z = radius * math.cos(phi)
+        return MPoint(round(x), round(y), round(z))
+
+    seed1 = MPoint(0,0,0)
+    seed2 = random_point_on_sphere(radius=1)
+    mycel.seed(seed1, seed2)
 
     orientator = Orientator(opts)
     aggregator = FieldAggregator()
