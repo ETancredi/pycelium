@@ -37,7 +37,6 @@ class SectFieldFinder(FieldFinder):
         a = self.section.start.as_array()
         b = self.section.end.as_array()
         p = point.as_array()
-    
         ab = b - a
         ap = p - a
         denom = np.dot(ab, ab)
