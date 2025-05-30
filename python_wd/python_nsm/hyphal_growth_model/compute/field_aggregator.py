@@ -4,6 +4,7 @@ from tropisms.field_finder import FieldFinder
 from tropisms.sect_field_finder import SectFieldFinder
 from core.section import Section
 from core.point import MPoint
+from core.options import ToggleableFloat
 from typing import List
 import numpy as np
 
@@ -35,10 +36,20 @@ class FieldAggregator:
             if source.get_id() in exclude_ids:
                 continue
 
-            if self.options and self.options.neighbour_radius > 0:
-                dist = point.distance_to(source.section.end)
-                if dist > self.options.neighbour_radius:
-                    continue
+            # — radius‐based filtering (support ToggleableFloat) —
+            if self.options:
+                nr = self.options.neighbour_radius
+                if isinstance(nr, ToggleableFloat):
+                    if nr.enabled and nr.value > 0:
+                        dist = point.distance_to(source.section.end)
+                        if dist > nr.value:
+                            continue
+                else:
+                    # legacy float/int
+                    if nr > 0:
+                        dist = point.distance_to(source.section.end)
+                        if dist > nr:
+                            continue
 
             total_field += source.find_field(point)
             grad = source.gradient(point)
