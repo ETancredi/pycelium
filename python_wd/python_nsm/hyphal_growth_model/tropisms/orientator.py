@@ -3,8 +3,7 @@
 import math
 import numpy as np
 from core.point import MPoint
-from core.options import Options
-from core.options import ToggleFloat
+from core.options import Options, ToggleableFloat, ToggleableInt
 from core.section import Section
 from compute.field_aggregator import FieldAggregator
 from vis.anisotropy_grid import AnisotropyGrid  
