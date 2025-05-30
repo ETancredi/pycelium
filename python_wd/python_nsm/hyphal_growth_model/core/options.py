@@ -102,9 +102,9 @@ class Options:
     
     die_if_too_dense: bool = True
     
-    min_supported_tips: ToggleableInt = field(default_factory=lambda: ToggleableInt(enabled=True, value=16))
+    min_supported_tips: ToggleableInt = field(default_factory=lambda: ToggleableInt(enabled=False, value=16))
     
-    max_supported_tips: ToggleableInt = field(default_factory=lambda: ToggleableInt(enabled=True, value=1000000))
+    max_supported_tips: ToggleableInt = field(default_factory=lambda: ToggleableInt(enabled=False, value=1000000))
     
     plagiotropism_tolerance: ToggleableFloat = field(default_factory=lambda: ToggleableFloat(enabled=True, value=5.0))
 
