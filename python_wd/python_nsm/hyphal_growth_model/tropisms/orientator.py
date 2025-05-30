@@ -4,6 +4,7 @@ import math
 import numpy as np
 from core.point import MPoint
 from core.options import Options
+from core.options import ToggleFloat
 from core.section import Section
 from compute.field_aggregator import FieldAggregator
 from vis.anisotropy_grid import AnisotropyGrid  
@@ -31,27 +32,32 @@ class Orientator:
     def compute(self, section: Section) -> MPoint:
         orientation = section.orientation.copy()
 
-        # --- 1) Field‐gradient “negative autotropism” (your old logic) ---
-        if self.aggregator:
-            strength, grad = self.aggregator.compute_field(section.end)
-            if grad is not None:
-                # negative_autotropism was your old option
-                orientation.add(grad.scale(self.options.negative_autotropism))
-
-                # • Boost alignment with field gradient
-                if self.options.field_alignment_boost > 0:
-                    grad_unit = grad.copy().normalise()
-                    dot = orientation.dot(grad_unit)
-                    if dot > 0:
-                        boost = grad_unit.scale(dot * self.options.field_alignment_boost)
-                        orientation.add(boost)
-
-                # • Curvature influence from field
-                if self.options.field_curvature_influence > 0:
-                    curvature = self.aggregator.compute_field_curvature(section.end)
-                    direction = grad.copy().normalise()
-                    orientation.add(direction.scale(curvature * self.options.field_curvature_influence))
-
++        # Autotropism (self-avoidance) using ToggleableFloat
++        if self.aggregator:
++            _, grad = self.aggregator.compute_field(section.end)
++            if grad is not None:
++                at = self.options.autotropism
++                ai = self.options.autotropism_impact
++                # only apply if both are enabled
++                if at.enabled and ai.enabled:
++                    # scale by autotropism * impact
++                    orientation.add(grad.copy().scale(at.value * ai.value))
++
++                # Boost alignment with field gradient
++                if self.options.field_alignment_boost > 0:
++                    grad_unit = grad.copy().normalise()
++                    dot = orientation.dot(grad_unit)
++                    if dot > 0:
++                        boost = grad_unit.scale(dot * self.options.field_alignment_boost)
++                        orientation.add(boost)
++                        print(f"Gradient alignment boost applied: dot={dot:.2f}, boost={boost}")
++
++                # Curvature influence from field
++                if self.options.field_curvature_influence > 0:
++                    curvature = self.aggregator.compute_field_curvature(section.end)
++                    direction = grad.copy().normalise()
++                    orientation.add(direction.scale(curvature * self.options.field_curvature_influence))
++                    print(f"🌀 Curvature contribution: value={curvature:.3f}, scaled={curvature * self.options.field_curvature_influence:.3f}")
         # --- 2) Autotropism along the current axis (XML’s Autotropism + impact) ---
         if self.options.autotropism:
             orientation.add(
