@@ -44,13 +44,13 @@ class Options:
     
     old_nbranch: bool = False
     
-    secondary_branching: bool = False
+    secondary_branching: bool = True
     
-    optimal_branch_orientation: bool = False
+    optimal_branch_orientation: bool = True
 
     # ─── Branch Crowding ───
     
-    density_dependend: bool = True
+    density_dependend: bool = False
     
     branching_density: ToggleableFloat = field(default_factory=lambda: ToggleableFloat(enabled=True, value=0.06))
     
@@ -58,7 +58,7 @@ class Options:
     
     log_branch_points: bool = False
     
-    field_threshold: ToggleableFloat = field(default_factory=lambda: ToggleableFloat(enabled=True, value=0.06))
+    field_threshold: ToggleableFloat = field(default_factory=lambda: ToggleableFloat(enabled=False, value=0.06))
 
     # ─── Tropisms ───
     
