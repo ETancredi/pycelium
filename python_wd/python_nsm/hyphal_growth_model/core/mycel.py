@@ -2,7 +2,7 @@
 
 from core.section import Section
 from core.point import MPoint
-from core.options import Options
+from core.options import ToggleableFloat, Options
 import numpy as np
 
 class Mycel:
