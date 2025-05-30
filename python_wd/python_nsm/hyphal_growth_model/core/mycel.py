@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 from core.point import MPoint
 from core.section import Section
-from core.options import Options, ToggleableFloat, ToggleableInt, Options
+from core.options import Options, ToggleableFloat, ToggleableInt
 
 class Mycel:
     """Main simulation engine: manages sections and steps simulation forward."""
@@ -72,9 +72,12 @@ class Mycel:
                     section.is_dead = True
                     continue
 
-            # — death by density field —
+            # — death by density field (exclude self) —
             if self.options.die_if_too_dense and section.field_aggregator:
-                density = section.field_aggregator.compute_field(section.end)[0]
+                density = section.field_aggregator.compute_field(
+                    section.end,
+                    exclude_ids=[id(section)]
+                )[0]
                 dt = self.options.density_threshold
                 if isinstance(dt, ToggleableFloat):
                     thr = dt.value if dt.enabled else float('inf')
@@ -88,7 +91,6 @@ class Mycel:
             # — death by nutrient repellent —
             if self.options.use_nutrient_field and section.field_aggregator:
                 nf = section.field_aggregator.compute_field(section.end)[0]
-                # nutrient_repulsion is a raw float
                 if nf < -abs(self.options.nutrient_repulsion):
                     print(f"💀 Repellent kill: nutrient field too negative ({nf:.3f})")
                     section.is_dead = True
@@ -98,10 +100,7 @@ class Mycel:
             if section.field_aggregator:
                 # unwrap neighbour_radius
                 nr = self.options.neighbour_radius
-                if isinstance(nr, ToggleableFloat):
-                    rad = nr.value if nr.enabled else 0.0
-                else:
-                    rad = nr
+                rad = nr.value if isinstance(nr, ToggleableFloat) and nr.enabled else (nr if not isinstance(nr, ToggleableFloat) else 0.0)
 
                 nearby_count = 0
                 for other in self.get_tips():
@@ -167,14 +166,12 @@ class Mycel:
         self.time += self.options.time_step
 
         # 5) Tip‐count pruning
-        # unwrap max_supported_tips
         mxt = self.options.max_supported_tips
         limit = None
-        if isinstance(mxt, ToggleableInt):
-            if mxt.enabled:
-                limit = mxt.value
-        else:
-            limit = mxt if mxt > 0 else None
+        if isinstance(mxt, ToggleableInt) and mxt.enabled:
+            limit = mxt.value
+        elif not isinstance(mxt, ToggleableInt) and mxt > 0:
+            limit = mxt
 
         if limit is not None:
             active_tips = self.get_tips()
