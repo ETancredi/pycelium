@@ -50,10 +50,14 @@ class Mycel:
             if self.options.die_if_old and section.age > self.options.max_age:
                 section.is_dead = True
                 continue
-            
-            if self.options.die_if_too_long and section.length > self.options.max_length:
-                section.is_dead = True
-                continue
+
+            ml = self.options.max_length
+            if isinstance (ml, ToggleableFloat):
+                if ml.enabled and section.length > ml.value:
+                    section.is_dead = True
+            else:
+                if section.length > ml:
+                    section.is_dead = True
             
             if self.options.die_if_too_dense and section.field_aggregator:
                 density = section.field_aggregator.compute_field(section.end)[0]
