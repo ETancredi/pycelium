@@ -31,61 +31,68 @@ class Orientator:
     def compute(self, section: Section) -> MPoint:
         orientation = section.orientation.copy()
 
-        # Autotropism (self-avoidance) using ToggleableFloat
+        # 1) Autotropism (self-avoidance) via field gradient
         if self.aggregator:
             _, grad = self.aggregator.compute_field(section.end)
             if grad is not None:
+                # unwrap autotropism & impact
                 at = self.options.autotropism
                 ai = self.options.autotropism_impact
-                # only apply if both are enabled
-                if at.enabled and ai.enabled:
-                    # scale by autotropism * impact
-                    orientation.add(grad.copy().scale(at.value * ai.value))
+                if isinstance(at, ToggleableFloat) and isinstance(ai, ToggleableFloat):
+                    if at.enabled and ai.enabled and at.value != 0 and ai.value != 0:
+                        orientation.add(grad.copy().scale(at.value * ai.value))
+                else:
+                    # legacy floats
+                    orientation.add(grad.copy().scale(self.options.autotropism * self.options.autotropism_impact))
 
-                # Boost alignment with field gradient
-                if self.options.field_alignment_boost > 0:
+                # 1a) Boost alignment with field gradient
+                fab = self.options.field_alignment_boost
+                if isinstance(fab, ToggleableFloat):
+                    boost_strength = fab.value if fab.enabled else 0.0
+                else:
+                    boost_strength = fab
+                if boost_strength > 0:
                     grad_unit = grad.copy().normalise()
                     dot = orientation.dot(grad_unit)
                     if dot > 0:
-                        boost = grad_unit.scale(dot * self.options.field_alignment_boost)
-                        orientation.add(boost)
-                        print(f"Gradient alignment boost applied: dot={dot:.2f}, boost={boost}")
+                        orientation.add(grad_unit.scale(dot * boost_strength))
 
-                # Curvature influence from field
-                if self.options.field_curvature_influence > 0:
+                # 1b) Curvature influence from field
+                fci = self.options.field_curvature_influence
+                if isinstance(fci, ToggleableFloat):
+                    ci_strength = fci.value if fci.enabled else 0.0
+                else:
+                    ci_strength = fci
+                if ci_strength > 0:
                     curvature = self.aggregator.compute_field_curvature(section.end)
                     direction = grad.copy().normalise()
-                    orientation.add(direction.scale(curvature * self.options.field_curvature_influence))
-                    print(f"🌀 Curvature contribution: value={curvature:.3f}, scaled={curvature * self.options.field_curvature_influence:.3f}")
-        # --- 2) Autotropism along the current axis (XML’s Autotropism + impact) ---
-        if self.options.autotropism:
-            orientation.add(
-                section.orientation.copy()
-                                   .scale(self.options.autotropism * self.options.autotropism_impact)
-            )
+                    orientation.add(direction.scale(curvature * ci_strength))
 
-        # --- 3) Density‐grid avoidance (unchanged) ---
+        # 2) Density‐grid avoidance
         if self.options.die_if_too_dense and self.density_grid:
             density_grad = self.density_grid.get_gradient_at(section.end)
             orientation.subtract(density_grad)
 
-        # --- 4) Gravitropism (with ramp between gravi_angle_start/end) ---
-        if self.options.gravitropism > 0:
+        # 3) Gravitropism (ramped between start/end)
+        gr = self.options.gravitropism
+        # unwrap tog‐float vs legacy
+        if isinstance(gr, ToggleableFloat):
+            strength_val = gr.value if gr.enabled else 0.0
+        else:
+            strength_val = gr
+        if strength_val > 0:
             z = section.end.coords[2]
             if z < self.options.gravi_angle_start:
-                strength = 0
+                s = 0.0
             elif z > self.options.gravi_angle_end:
-                strength = self.options.gravitropism
+                s = strength_val
             else:
-                t = (
-                    (z - self.options.gravi_angle_start) /
-                    (self.options.gravi_angle_end - self.options.gravi_angle_start)
-                )
-                strength = t * self.options.gravitropism
-            # Z‐axis downward pull
-            orientation.add(MPoint(0, 0, -1).scale(strength))
+                t = ((z - self.options.gravi_angle_start) /
+                     (self.options.gravi_angle_end - self.options.gravi_angle_start))
+                s = t * strength_val
+            orientation.add(MPoint(0, 0, -1).scale(s))
 
-        # --- 5) Nutrient‐field attractors/repellents (unchanged) ---
+        # 4) Nutrient fields (unchanged)
         for nutrient in self.nutrient_sources:
             delta = nutrient.copy().subtract(section.end)
             dist = np.linalg.norm(delta.as_array())
@@ -93,16 +100,14 @@ class Orientator:
                 influence = 1.0 - (dist / self.options.nutrient_radius)
                 if self.options.nutrient_attraction > 0:
                     orientation.add(
-                        delta.copy().normalise()
-                             .scale(self.options.nutrient_attraction * influence)
+                        delta.copy().normalise().scale(self.options.nutrient_attraction * influence)
                     )
                 if self.options.nutrient_repulsion > 0:
                     orientation.subtract(
-                        delta.copy().normalise()
-                             .scale(self.options.nutrient_repulsion * influence)
+                        delta.copy().normalise().scale(self.options.nutrient_repulsion * influence)
                     )
 
-        # --- 6) Anisotropy (grid or global) ---
+        # 5) Anisotropy
         if self.options.anisotropy_enabled:
             if self.anisotropy_grid:
                 dir_vec = self.anisotropy_grid.get_direction_at(section.end)
@@ -110,18 +115,22 @@ class Orientator:
                 dir_vec = MPoint(*self.options.anisotropy_vector).normalise()
             orientation.add(dir_vec.scale(self.options.anisotropy_strength))
 
-        # --- 7) Random walk jitter ---
+        # 6) Random walk jitter
         if self.options.random_walk > 0:
             rv = MPoint(*np.random.randn(3)).normalise().scale(self.options.random_walk)
             orientation.add(rv)
 
-        # --- 8) Directional‐memory blending (EMA‐style) ---
-        if self.options.direction_memory_blend > 0:
-            blend = self.options.direction_memory_blend
+        # 7) Directional‐memory blending (EMA‐style)
+        dmb = self.options.direction_memory_blend
+        if isinstance(dmb, ToggleableFloat):
+            blend = dmb.value if dmb.enabled else 0.0
+        else:
+            blend = dmb
+        if blend > 0:
             orientation = (
                 section.orientation.copy().scale(blend)
-                              .add(orientation.scale(1 - blend))
-                              .normalise()
+                .add(orientation.scale(1.0 - blend))
+                .normalise()
             )
 
         return orientation.normalise()
