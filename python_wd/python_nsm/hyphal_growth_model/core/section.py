@@ -1,14 +1,16 @@
 # core/section.py
 
+from __future__ import annotations
 import math
 import numpy as np
 from core.point import MPoint
 from tropisms.sect_field_finder import SectFieldFinder
+from core.options import ToggleableFloat
 
 class Section:
     """Represents a single hyphal segment (tip or branch) in the fungal network"""
 
-    def __init__(self, start: MPoint, orientation: MPoint, parent=None):
+    def __init__(self, start: MPoint, orientation: MPoint, parent: Section | None = None):
         self.start = start.copy()
         self.orientation = orientation.copy().normalise()
         self.length = 0.0
@@ -19,14 +21,14 @@ class Section:
         self.branches_made = 0
 
         self.parent = parent
-        self.children = []
+        self.children: list[Section] = []
 
         self.end = self.start.copy()
-        self.subsegments = [(self.start.copy(), self.start.copy())]
+        self.subsegments: list[tuple[MPoint, MPoint]] = [(self.start.copy(), self.start.copy())]
 
         self.options = None
         self.field_aggregator = None
-        self.orientator = None    # NEW: holds shared Orientator instance
+        self.orientator = None    # Shared Orientator instance
 
         self.direction_memory = self.orientation.copy()
 
@@ -57,21 +59,35 @@ class Section:
         if not self.is_tip or self.is_dead:
             return
 
-        # 1. Central tropism/orientator-driven orientation
+        # 1. Tropism/orientator‐driven re‐orientation
         if self.orientator:
             self.orientation = self.orientator.compute(self)
 
-        # 2. Length-scaled growth
+        # 2. Length‐scaled growth (unwrap ToggleableFloat)
         if self.options.length_scaled_growth:
-            scale_factor = 1 + self.length * self.options.length_growth_coef
-            rate *= scale_factor
+            lgc = self.options.length_growth_coef
+            coef = (
+                lgc.value if isinstance(lgc, ToggleableFloat) and lgc.enabled
+                else (lgc if not isinstance(lgc, ToggleableFloat) else 0.0)
+            )
+            rate *= (1 + self.length * coef)
 
-        # 3. Age-based slowdown (d_age)
+        # 3. Age‐based slowdown (unwrap ToggleableFloat)
         age = self.age if self.age > 0 else 1.0
-        rate /= (age ** self.options.d_age)
+        dag = self.options.d_age
+        exp = (
+            dag.value if isinstance(dag, ToggleableFloat) and dag.enabled
+            else (dag if not isinstance(dag, ToggleableFloat) else 0.0)
+        )
+        rate /= (age ** exp)
 
-        # 4. Default growth-vector scaling
-        rate *= self.options.default_growth_vector
+        # 4. Default growth‐vector scaling (unwrap ToggleableFloat)
+        dgv = self.options.default_growth_vector
+        if isinstance(dgv, ToggleableFloat):
+            if dgv.enabled:
+                rate *= dgv.value
+        else:
+            rate *= dgv
 
         # 5. Actual growth step
         growth_distance = rate * dt
@@ -83,13 +99,16 @@ class Section:
         self.age += dt
         self.subsegments.append((prev_end, self.end.copy()))
 
-        # 6. EMA-style directional memory update
-        alpha = self.options.direction_memory_blend
+        # 6. EMA‐style directional memory update (unwrap ToggleableFloat)
+        dmb = self.options.direction_memory_blend
+        alpha = (
+            dmb.value if isinstance(dmb, ToggleableFloat) and dmb.enabled
+            else (dmb if not isinstance(dmb, ToggleableFloat) else 0.0)
+        )
         self.direction_memory = (
-            self.direction_memory
-                .scale(1 - alpha)
-                .add(self.orientation.copy().scale(alpha))
-                .normalise()
+            self.direction_memory.scale(1 - alpha)
+                                 .add(self.orientation.copy().scale(alpha))
+                                 .normalise()
         )
 
     def update(self):
