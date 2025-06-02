@@ -197,12 +197,18 @@ class Section:
 
         # 7. Random gate
         bp = self.options.branch_probability
-        prob = bp.value if isinstance(bp, ToggleableFloat) and bp.enabled else (
-               bp if not isinstance(bp, ToggleableFloat) else 0.0)
-        if np.random.rand() >= prob:
-            print(f"DEBUG: gate=random (rand={r:.3f} ≥ {prob})")
+        # Unwrap ToggleableFloat if needed
+        if isinstance(bp, ToggleableFloat):
+            prob = bp.value if bp.enabled else 0.0
+        else:
+            prob = bp
+        
+        r = np.random.rand()
+        if r >= prob:
+            print(f"DEBUG: gate=random (rand={r:.3f} ≥ {prob:.3f})")
             return None
-        print(f"DEBUG: passed random (rand={r:.3f} < {prob})")
+        
+        print(f"DEBUG: passed random (rand={r:.3f} < {prob:.3f})")
 
         # ALL GATES PASSED --> BRANCH
         print("DBG: all gates passed, creating branch")
