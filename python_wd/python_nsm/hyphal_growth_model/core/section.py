@@ -287,7 +287,8 @@ class Section:
             strength, field_vec = self.field_aggregator.compute_field(
                 self.end, exclude_ids=[id(self)]
             )
-            if field_vec.length() > 0:
+            magnitude = np.line.norm(field_vec.as_array())
+            if magnitude > 0:
                 new_dir = field_vec.copy().normalise().scale(default_strength)
             else:
                 new_dir = None
