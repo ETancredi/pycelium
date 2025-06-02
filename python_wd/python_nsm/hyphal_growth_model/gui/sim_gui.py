@@ -11,12 +11,17 @@ from core.options import Options, ToggleableFloat, ToggleableInt
 from core.point import MPoint
 from main import setup_simulation, step_simulation, generate_outputs
 
+
 class OptionGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("CyberMycelium Simulator")
         self.options = Options()
-        self.entries = {}
+        # entries[field_name] will hold a tuple:
+        #   • For ToggleableFloat/ToggleableInt: (BooleanVar, StringVar, Entry widget)
+        #   • For plain bool:         (BooleanVar, None, None)
+        #   • For plain numeric/str: (None, StringVar, Entry widget)
+        self.entries: dict[str, tuple] = {}
 
         self.sim_thread = None
         self.running = False
@@ -35,6 +40,19 @@ class OptionGUI:
         self.build_gui()
         self.root.mainloop()
 
+    def on_toggle(self, field_name: str, bool_var: tk.BooleanVar):
+        """
+        Called whenever a ToggleableFloat/ToggleableInt checkbox is toggled.
+        Enable or disable the corresponding Entry widget.
+        """
+        _, _, entry_widget = self.entries[field_name]
+        if entry_widget is None:
+            return
+        if bool_var.get():
+            entry_widget.config(state="normal")
+        else:
+            entry_widget.config(state="disabled")
+
     def build_gui(self):
         notebook = ttk.Notebook(self.root)
         notebook.pack(fill="both", expand=True)
@@ -50,7 +68,7 @@ class OptionGUI:
         for name, frame in tabs.items():
             notebook.add(frame, text=name)
 
-        # Match exactly your Options grouping
+        # Define which fields go into which tab, matching Options exactly
         field_categories = {
             "Core": [
                 "growth_rate", "time_step",
@@ -79,7 +97,7 @@ class OptionGUI:
                 "field_curvature_influence",
                 "gravi_angle_start", "gravi_angle_end",
                 "gravi_angle_max", "gravi_layer_thickness",
-                "plagiotropism_tolerance",
+                "plagiotropism_tolerance_angle",
                 "anisotropy_enabled", "anisotropy_vector",
                 "anisotropy_strength"
             ],
@@ -97,64 +115,77 @@ class OptionGUI:
             ],
         }
 
+        # Build each tab’s widget rows
         for category, fields in field_categories.items():
             frame = tabs[category]
-            for row, field in enumerate(fields):
-                if not hasattr(self.options, field):
+
+            for row, field_name in enumerate(fields):
+                if not hasattr(self.options, field_name):
                     continue
-                val = getattr(self.options, field)
 
-                ttk.Label(frame, text=field).grid(column=0, row=row, sticky="w")
+                val = getattr(self.options, field_name)
+                ttk.Label(frame, text=field_name).grid(column=0, row=row, sticky="w")
 
-                # ToggleableFloat → checkbox + float entry
+                # ToggleableFloat → Checkbutton + Entry
                 if isinstance(val, ToggleableFloat):
                     bool_var = tk.BooleanVar(value=val.enabled)
                     chk = ttk.Checkbutton(frame, variable=bool_var)
                     chk.grid(column=1, row=row)
+
                     num_var = tk.StringVar(value=str(val.value))
                     entry = ttk.Entry(frame, textvariable=num_var, width=12)
-                    entry.grid(column=2, row=row, padx=(5,0))
-                    # enable/disable entry
-                    def toggle_f(_=None, e=entry, b=bool_var):
-                        e.config(state="normal" if b.get() else "disabled")
-                    bool_var.trace_add("write", toggle_f)
-                    toggle_f()
-                    self.entries[field] = (bool_var, num_var)
+                    entry.grid(column=2, row=row, padx=(5, 0))
 
-                # ToggleableInt → checkbox + int entry
+                    # Bind the checkbox so that on_toggle will enable/disable the entry
+                    bool_var.trace_add("write",
+                                       lambda *args, fn=field_name, bv=bool_var: self.on_toggle(fn, bv))
+                    # Kick once to set initial state
+                    self.on_toggle(field_name, bool_var)
+
+                    # Store (BooleanVar, StringVar, Entry)
+                    self.entries[field_name] = (bool_var, num_var, entry)
+
+                # ToggleableInt → Checkbutton + Entry
                 elif isinstance(val, ToggleableInt):
                     bool_var = tk.BooleanVar(value=val.enabled)
                     chk = ttk.Checkbutton(frame, variable=bool_var)
                     chk.grid(column=1, row=row)
+
                     num_var = tk.StringVar(value=str(val.value))
                     entry = ttk.Entry(frame, textvariable=num_var, width=12)
-                    entry.grid(column=2, row=row, padx=(5,0))
-                    # enable/disable entry
-                    def toggle_i(_=None, e=entry, b=bool_var):
-                        e.config(state="normal" if b.get() else "disabled")
-                    bool_var.trace_add("write", toggle_i)
-                    toggle_i()
-                    self.entries[field] = (bool_var, num_var)
+                    entry.grid(column=2, row=row, padx=(5, 0))
 
-                # Plain bool
+                    bool_var.trace_add("write",
+                                       lambda *args, fn=field_name, bv=bool_var: self.on_toggle(fn, bv))
+                    self.on_toggle(field_name, bool_var)
+
+                    self.entries[field_name] = (bool_var, num_var, entry)
+
+                # Plain bool → single Checkbutton
                 elif isinstance(val, bool):
                     var = tk.BooleanVar(value=val)
                     chk = ttk.Checkbutton(frame, variable=var)
                     chk.grid(column=1, row=row)
-                    self.entries[field] = var
+                    # Store (BooleanVar, None, None)
+                    self.entries[field_name] = (var, None, None)
 
-                # Everything else (float, int, str)
+                # Everything else (float, int, str) → single Entry
                 else:
                     var = tk.StringVar(value=str(val))
                     entry = ttk.Entry(frame, textvariable=var, width=18)
                     entry.grid(column=1, row=row)
-                    self.entries[field] = var
+                    # Store (None, StringVar, Entry)
+                    self.entries[field_name] = (None, var, entry)
 
-        # Nutrient Editor button
-        Button(tabs["Nutrient"], text="🧪 Nutrient Editor",
-               command=self.open_nutrient_editor).grid(column=0, row=len(field_categories["Nutrient"])+1, columnspan=2)
+        # Add the “Nutrient Editor” button below the Nutrient tab’s last row
+        nutrient_last_row = len(field_categories["Nutrient"])
+        Button(
+            tabs["Nutrient"],
+            text="🧪 Nutrient Editor",
+            command=self.open_nutrient_editor
+        ).grid(column=0, row=nutrient_last_row + 1, columnspan=2)
 
-        # Run tab (unchanged layout)
+        # Run tab (unchanged layout except metrics panel)
         run_tab = tabs["Run"]
         ttk.Label(run_tab, text="Max Steps").grid(column=0, row=0, sticky="e")
         ttk.Entry(run_tab, textvariable=self.max_steps_var, width=10).grid(column=1, row=0)
@@ -167,6 +198,7 @@ class OptionGUI:
         ttk.Button(run_tab, text="Pause / Resume", command=self.toggle_pause).grid(column=0, row=4, columnspan=2)
         self.metrics_label = ttk.Label(run_tab, text="Step: 0 | Tips: 0 | Total: 0")
         self.metrics_label.grid(column=0, row=5, columnspan=2, pady=5)
+
         self.canvas = FigureCanvasTkAgg(self.fig, master=run_tab)
         self.canvas.get_tk_widget().grid(row=0, column=3, rowspan=8, padx=20, pady=10)
 
@@ -176,40 +208,52 @@ class OptionGUI:
             self.output_folder.set(folder)
 
     def get_options(self):
-        for key, var in self.entries.items():
-            val = getattr(self.options, key)
+        """
+        Read all current GUI‐widget values back into self.options. 
+        ToggleableFloat/Int fields will be updated from (enabled, value),
+        plain bools from their BooleanVar, and plain numeric/str from the Entry.
+        """
+        for key, stored in self.entries.items():
+            raw_val = getattr(self.options, key)
 
-            # Unwrap ToggleableFloat
-            if isinstance(val, ToggleableFloat):
-                bool_var, num_var = var
-                val.enabled = bool_var.get()
+            # ToggleableFloat
+            if isinstance(raw_val, ToggleableFloat):
+                bool_var, num_var, _ = stored
+                raw_val.enabled = bool_var.get()
                 try:
-                    val.value = float(num_var.get())
+                    raw_val.value = float(num_var.get())
                 except ValueError:
                     pass
                 continue
 
-            # Unwrap ToggleableInt
-            if isinstance(val, ToggleableInt):
-                bool_var, num_var = var
-                val.enabled = bool_var.get()
+            # ToggleableInt
+            if isinstance(raw_val, ToggleableInt):
+                bool_var, num_var, _ = stored
+                raw_val.enabled = bool_var.get()
                 try:
-                    val.value = int(num_var.get())
+                    raw_val.value = int(num_var.get())
                 except ValueError:
                     pass
                 continue
 
             # Plain bool
-            if isinstance(val, bool):
-                setattr(self.options, key, var.get() in ("1", "true", "True"))
-            else:
-                # Try float then int fallback
-                s = var.get()
-                try:
-                    parsed = float(s) if "." in s or isinstance(val, float) else int(s)
-                except ValueError:
-                    parsed = val
-                setattr(self.options, key, parsed)
+            if isinstance(raw_val, bool):
+                var = stored[0]  # BooleanVar
+                setattr(self.options, key, var.get())
+                continue
+
+            # Plain numeric or string
+            # We’ll attempt float if there’s a “.” or if original was float; else int
+            _, var, _ = stored
+            s = var.get()
+            try:
+                if "." in s or isinstance(raw_val, float):
+                    parsed = float(s)
+                else:
+                    parsed = int(s)
+            except ValueError:
+                parsed = raw_val
+            setattr(self.options, key, parsed)
 
         return self.options
 
@@ -329,6 +373,7 @@ class OptionGUI:
             max_tips = int(self.max_tips_var.get())
         except ValueError:
             max_tips = 1000
+
         for step in range(max_steps):
             while self.paused:
                 time.sleep(0.2)
@@ -339,10 +384,12 @@ class OptionGUI:
             if len(self.mycel.get_tips()) >= max_tips:
                 print(f"🛑 Max tips reached: {max_tips}")
                 break
+
         self.running = False
         print("✅ Simulation complete")
         self.root.after_idle(lambda: generate_outputs(self.mycel, self.components, output_dir=self.output_folder.get()))
         self.draw_3d_mycelium()
+
 
 if __name__ == "__main__":
     OptionGUI()
