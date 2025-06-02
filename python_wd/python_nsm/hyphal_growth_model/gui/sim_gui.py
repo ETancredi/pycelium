@@ -237,7 +237,8 @@ class OptionGUI:
 
             # ─── Plain bool ───
             if isinstance(val, bool):
-                setattr(self.options, key, var.get() in ("1", "true", "True"))
+                # BolleanVar.get() already returns True/False
+                setattr(self.options, key, var.get())
             else:
                 # try float first, then int fallback
                 s = var.get()
