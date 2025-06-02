@@ -272,58 +272,58 @@ class Section:
 
     def get_new_growing_vector(self, default_strength: float):
         parent = self.orientation.copy().normalise()
-
-        # Unwraps branch_angle_spread from ToggleableFloat if necessary
-        bas = self.options.branch_angle_spread
-        if isinstance(bas, ToggleableFloat):
-            angle_spread = bas.value if bas.enabled else 0.0
-        else:
-            angle_spread = bas
-
-        max_angle_rad = math.radians(angle_spread)
-
+        max_angle_rad = math.radians(
+            self.options.branch_angle_spread.value
+            if isinstance(self.options.branch_angle_spread, ToggleableFloat) and self.options.branch_angle_spread.enabled
+            else self.options.branch_angle_spread
+        )
+    
         # 1) Optimal orientation via field
+        new_dir = None
         if self.options.optimal_branch_orientation and self.field_aggregator:
             strength, field_vec = self.field_aggregator.compute_field(
                 self.end, exclude_ids=[id(self)]
             )
-            magnitude = np.line.norm(field_vec.as_array())
-            if magnitude > 0:
+            # compute magnitude via NumPy
+            mag = np.linalg.norm(field_vec.as_array())
+            if mag > 0:
                 new_dir = field_vec.copy().normalise().scale(default_strength)
-            else:
-                new_dir = None
-        else:
-            new_dir = None
-
+    
         # 2) Uniform 3D cone sampling (if no optimal vector)
         if new_dir is None:
             cos_max = math.cos(max_angle_rad)
             u = np.random.uniform(cos_max, 1.0)
             phi = math.acos(u)
             theta = np.random.uniform(0, 2 * math.pi)
-
+    
+            # Build orthonormal basis (parent, perp1, perp2)
             if abs(parent.coords[0]) < 0.9:
                 temp = MPoint(1, 0, 0)
             else:
                 temp = MPoint(0, 1, 0)
             perp1 = parent.cross(temp).normalise()
             perp2 = parent.cross(perp1).normalise()
-
+    
             part1 = parent.copy().scale(math.cos(phi))
             part2 = perp1.copy().scale(math.sin(phi) * math.cos(theta))
             part3 = perp2.copy().scale(math.sin(phi) * math.sin(theta))
             new_dir = part1.add(part2).add(part3).normalise().scale(default_strength)
-
-        # Plagiotropism tolerance
-        tol_rad = math.radians(self.options.plagiotropism_tolerance_angle)
+    
+        # --- Plagiotropism tolerance ---
+        # Clamp to pure downward if too far from vertical
+        tol_rad = math.radians(self.options.plagiotropism_tolerance_angle.value
+            if isinstance(self.options.plagiotropism_tolerance_angle, ToggleableFloat) and
+               self.options.plagiotropism_tolerance_angle.enabled
+            else self.options.plagiotropism_tolerance_angle
+        )
         vertical = MPoint(0, 0, -1).normalise()
         cosang = new_dir.dot(vertical)
         cosang = max(-1.0, min(1.0, cosang))
         if math.acos(cosang) > tol_rad:
             new_dir = vertical.scale(default_strength)
-
+    
         return new_dir
-
+    
     def get_subsegments(self):
         return [(s.copy(), e.copy()) for s, e in self.subsegments]
 
