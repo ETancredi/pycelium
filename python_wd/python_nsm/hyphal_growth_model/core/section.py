@@ -311,10 +311,10 @@ class Section:
     
         # --- Plagiotropism tolerance ---
         # Clamp to pure downward if too far from vertical
-        tol_rad = math.radians(self.options.plagiotropism_tolerance_angle.value
-            if isinstance(self.options.plagiotropism_tolerance_angle, ToggleableFloat) and
-               self.options.plagiotropism_tolerance_angle.enabled
-            else self.options.plagiotropism_tolerance_angle
+        tol_rad = math.radians(self.options.plagiotropism_tolerance.value
+            if isinstance(self.options.plagiotropism_tolerance, ToggleableFloat) and
+               self.options.plagiotropism_tolerance.enabled
+            else self.options.plagiotropism_tolerance
         )
         vertical = MPoint(0, 0, -1).normalise()
         cosang = new_dir.dot(vertical)
