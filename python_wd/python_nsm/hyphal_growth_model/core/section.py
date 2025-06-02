@@ -272,7 +272,15 @@ class Section:
 
     def get_new_growing_vector(self, default_strength: float):
         parent = self.orientation.copy().normalise()
-        max_angle_rad = math.radians(self.options.branch_angle_spread)
+
+        # Unwraps branch_angle_spread from ToggleableFloat if necessary
+        bas = self.options.branch_angle_spread
+        if isinstance(bas, ToggleableFloat):
+            angle_spread = bas.value if bas.enabled else 0.0
+        else:
+            angle_spread = bas
+
+        max_angle_rad = math.radians(angle_spread)
 
         # 1) Optimal orientation via field
         if self.options.optimal_branch_orientation and self.field_aggregator:
