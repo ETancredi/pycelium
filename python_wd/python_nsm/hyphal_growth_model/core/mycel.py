@@ -14,6 +14,7 @@ class Mycel:
         self.time = 0.0
         self.step_history = []
         self.time_series = []
+        self.biomass_history: list[float] = []
 
     def seed(self, location: MPoint, orientation: MPoint):
         """Initialise the simulation with a single tip."""
