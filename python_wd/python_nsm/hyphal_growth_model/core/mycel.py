@@ -14,6 +14,7 @@ class Mycel:
         self.time = 0.0
         self.step_history = []
         self.time_series = []
+        self.biomass_history: list[float] = []
 
     def seed(self, location: MPoint, orientation: MPoint):
         """Initialise the simulation with a single tip."""
@@ -135,6 +136,11 @@ class Mycel:
         # Log positions of all active tips at this step
         tip_data = [(tip.end.coords[0], tip.end.coords[1], tip.end.coords[2]) for tip in self.get_tips()]
         self.step_history.append((self.time, tip_data))
+
+        # Compoute & record total "biomass" this step
+        total_biomass = sum(sec.length for sec in self.sections if not sec.is_dead)
+        self.biomass_history.append(total_biomass)
+        print(f" 🪵 Total living biomass: {total_biomass:.2f}")
 
     def get_tips(self):
         return [s for s in self.sections if s.is_tip and not s.is_dead]
