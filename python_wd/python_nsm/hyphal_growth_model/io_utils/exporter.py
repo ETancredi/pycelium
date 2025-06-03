@@ -70,5 +70,4 @@ def export_biomass_history(mycel: Mycel, filepath: str):
         for step_index, biomass in enumerate(mycel.biomass_history):
             t = step_index * mycel.options.time_step
             writer.writerow([t, biomass])
-
-     print(f"🪵 Biomass history at each time step exported: {filename}")
+    print(f"🪵 Biomass history at each time step exported: {filename}")
