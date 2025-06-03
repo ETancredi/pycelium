@@ -101,7 +101,7 @@ class OptionGUI:
         ttk.Button(sim_tab, text="Start Simulation", command=self.start_sim).grid(column=0, row=3, columnspan=2, pady=8)
         ttk.Button(sim_tab, text="Pause / Resume", command=self.toggle_pause).grid(column=0, row=4, columnspan=2)
 
-        self.metrics_label = ttk.Label(sim_tab, text="Step: 0 | Tips: 0 | Total: 0")
+        self.metrics_label = ttk.Label(sim_tab, text="Step: 0 | Tips: 0 | Biomass: 0")
         self.metrics_label.grid(column=0, row=5, columnspan=2, pady=5)
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=sim_tab)
@@ -201,8 +201,15 @@ class OptionGUI:
 
     def update_metrics_display(self, step):
         tips = len(self.mycel.get_tips())
-        total = len(self.mycel.get_all_segments())
-        self.metrics_label.config(text=f"Step: {step} | Tips: {tips} | Total: {total}")
+        # pull last recorded biomass (if available)
+        if hasattr(self.mycel, "biomass_history") and self.mycel.biomass_history:
+            biomass = self.mycel.biomass_history[-1]
+        else:
+            biomass = 0.0
+        # update the label to show biomass instead of “Total”
+        self.metrics_label.config(
+            text=f"Step: {step} | Tips: {tips} | Biomass: {biomass:.2f}"
+        )        
 
     def draw_3d_mycelium(self):
         self.ax.clear()
