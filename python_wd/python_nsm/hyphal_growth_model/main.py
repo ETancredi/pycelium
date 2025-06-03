@@ -48,6 +48,9 @@ def setup_simulation(opts):
     else:
         print("🌱 No seed specified; using system randomness.")
 
+    # Create mycel instance
+    mycel = Mycel(opts)
+
     def random_point_on_sphere(radius):
         theta = random.uniform(0,2 * math.pi)
         phi = math.acos(random.uniform(-1,1))
@@ -58,7 +61,7 @@ def setup_simulation(opts):
 
     seed1 = MPoint(0,0,0)
     seed2 = random_point_on_sphere(radius=1)
-    Mycel.seed(seed1, seed2)
+    mycel.seed(seed1, seed2)
 
     orientator = Orientator(opts)
     aggregator = FieldAggregator()
