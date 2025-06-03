@@ -103,10 +103,15 @@ class Options:
     # If True, in Section.get_new_growing_vector() the code first asks the compute.field_aggregator:
     #     strength, field_vec = compute_field(...)
     #         and if field_vec is not 0, it uses that direction instead of random-cone sampling.
+    # If False, branches always come from uniform cone-sampling
 
     # ─── Branch Crowding ───
     
     density_dependend: bool = False
+
+    # If True, every tip checks local hyphal density before branching
+    #     If compute_local_hyphal_density(radius) ≥ brasnching_density.value --> no branch.
+    # If False, skip hyphal-crowding gate entirely
     
     branching_density: ToggleableFloat = field(default_factory=lambda: ToggleableFloat(enabled=True, value=0.06))
     
