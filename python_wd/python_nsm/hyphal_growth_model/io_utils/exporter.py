@@ -50,6 +50,7 @@ def export_to_obj(mycel: Mycel, filename="mycelium.obj"):
             f.write(f"v {v[0]} {v[1]} {v[2]}\n")
         for e in edges:
             f.write(f"l {e[0]} {e[1]}\n")
+            
     print(f"🌐 OBJ exported: {filename}")
 
 def export_tip_history(mycel, filename="mycelium_time_series.csv"):
@@ -63,7 +64,7 @@ def export_tip_history(mycel, filename="mycelium_time_series.csv"):
 
     print(f"🧪 Tip position time series exported: {filename}")
 
-def export_biomass_history(mycel: Mycel, filepath: str):
+def export_biomass_history(mycel: Mycel, filename="living_cyberbiomass_time_series.csv"):
     with open(filepath, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["time", "biomass"])
