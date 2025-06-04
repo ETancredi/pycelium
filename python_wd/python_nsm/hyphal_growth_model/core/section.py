@@ -1,7 +1,11 @@
 # core/section.py
 
-from core.point import MPoint
+import math
 import numpy as np
+
+from core.point import MPoint
+
+from tropisms.sect_field_finder import SectFieldFinder
 
 class Section:
     """Represents a single hyphal segment (tip or branch) in the fungal network"""
@@ -40,13 +44,52 @@ class Section:
 
         growth_distance = rate * dt
         delta = self.orientation.copy().scale(growth_distance)
-
         prev_end = self.end.copy()
         self.end.add(delta)
         self.length += growth_distance
         self.age += dt
-
         self.subsegments.append((prev_end, self.end.copy()))
+
+        # Volume Constraint Check (tip stops at boundary)
+        opts = self.options
+        if opts.volume_constraint:
+            x, y, z = self.end.coords
+            
+            # If any coordinate is outside, clamp and stop future growth:
+            out_of_bounds = False
+            
+            # X-axis:
+            if x < opts.x_min:
+                x = opts.x_min
+                out_of_bounds = True
+            elif x > opts.x_max:
+                x = opts.x_max
+                out_of_bounds = True
+
+            # Y-axis:
+            if y < opts.y_min:
+                y = opts.y_min
+                out_of_bounds = True
+            elif y > opts.y_max:
+                y = opts.y_max
+                out_of_bounds = True
+            
+            # Z-axis:
+            if z < opts.z_min:
+                z = opts.z_min
+                out_of_bounds = True
+            elif z > opts.z_max:
+                z = opts.z_max
+                out_of_bounds = True
+
+            if out_of_bounds:
+                # Clamp the offending tip to the fit it hits:
+                self.end = MPoint(x, y, z)
+                # Recompute length so that the segment does not extend past the box:
+                self.length = self.start.distance_to(self.end)
+                # Inactivate the tip, so it will not continue to grow
+                self.is_tip = False
+                return
 
         # Update directional memory (EMA-style)
         if self.options and hasattr(self.options, "direction_memory_blend"):
