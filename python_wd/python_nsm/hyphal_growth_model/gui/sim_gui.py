@@ -44,6 +44,7 @@ class OptionGUI:
             "Tropisms": ttk.Frame(notebook),
             "Density": ttk.Frame(notebook),
             "Nutrient": ttk.Frame(notebook),
+            "Boundary": ttk.Frame(notebook),
             "Run": ttk.Frame(notebook)
         }
 
@@ -64,6 +65,7 @@ class OptionGUI:
                         "density_from_branches", "density_from_all"],
             "Nutrient": ["use_nutrient_field", "nutrient_attraction", "nutrient_repulsion",
                          "nutrient_radius", "nutrient_decay"],
+            "Boundary": ["volume_constraint", "x_min", "x_max", "y_min", "y_max", "z_min", "z_max"],
         }
 
         for category, fields in field_categories.items():
