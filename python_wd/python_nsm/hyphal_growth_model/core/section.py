@@ -2,9 +2,7 @@
 
 import math
 import numpy as np
-
 from core.point import MPoint
-
 from tropisms.sect_field_finder import SectFieldFinder
 
 class Section:
