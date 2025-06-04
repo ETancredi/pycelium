@@ -65,12 +65,12 @@ def export_tip_history(mycel, filename="mycelium_time_series.csv"):
     print(f"🧪 Tip position time series exported: {filename}")
 
 def export_biomass_history(mycel: Mycel, filename: str):
+    import csv
     with open(filename, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["time", "biomass"])
+        writer.writerow(["time", "tips", "biomass"])
         for i, biomass in enumerate(mycel.biomass_history):
             t = i * mycel.options.time_step
-            writer.writerow([t, biomass])
-            
-    print(f"🪵 Biomass history at each time step exported: {filename}")
-    
+            tips_count = len(mycel.step_history[i][1]) if i < len(mycel.step_history) else 0
+            writer.writerow([t, tips_count, biomass])
+    print(f"🪵 Biomass & tip‐count history exported: {filename}")
