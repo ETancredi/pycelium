@@ -21,7 +21,7 @@ from compute.field_aggregator import FieldAggregator
 from io_utils.checkpoint import CheckpointSaver
 from io_utils.autostop import AutoStop
 from io_utils.grid_export import export_grid_to_csv, export_grid_to_png
-from io_utils.exporter import export_to_csv, export_to_obj, export_tip_history
+from io_utils.exporter import export_to_csv, export_to_obj, export_tip_history, export_biomass_history
 
 from control.runtime_mutator import RuntimeMutator
 
@@ -188,6 +188,9 @@ def generate_outputs(mycel, components, output_dir="outputs"):
       save_path=f"{output_dir}/mycelium_growth.mp4",
       interval = 100 # ms per frame
     )
+
+    export_tip_history(mycel, f"{output_dir}/mycelium_time_series.csv")
+    export_biomass_history(mycel, f"{output_dir}/biomass_and_tips_history.csv")
 
 def simulate(opts, steps=120):
     mycel, components = setup_simulation(opts)
