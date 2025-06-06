@@ -85,12 +85,12 @@ class Options:
 
     # Volume Constraint
     volume_constraint: bool = False
-    x_min: float = -50.0
-    x_max: float = 50.0
-    y_min: float = -50.0
-    y_max: float = 50.0
-    z_min: float = -50.0
-    z_max: float = 50.0
+    x_min: float = -10.0
+    x_max: float = 10.0
+    y_min: float = -10.0
+    y_max: float = 10.0
+    z_min: float = -10.0
+    z_max: float = 10.0
     
     # Reproducibility
     seed: int = 123
