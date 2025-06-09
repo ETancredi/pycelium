@@ -6,6 +6,11 @@ from core.mycel import Mycel
 
 def plot_mycel_3d_interactive(mycel: Mycel, save_path="outputs/mycelium_3d_interactive.html"):
     traces = []
+    # helper to convert float RGB to hex color string
+    def to_hex(rgb):
+        return "#{:02x}{:02x}{:02x}".format(
+            int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)
+        )    
 
     for section in mycel.get_all_segments():
         for start, end in section.get_subsegments():
@@ -13,9 +18,9 @@ def plot_mycel_3d_interactive(mycel: Mycel, save_path="outputs/mycelium_3d_inter
             trace = go.Scatter3d(
                 x=xs, y=ys, z=zs,
                 mode='lines',
-                line=dict(width=2, color='green'),
+                line=dict(width=2, color=to_hex(section.color)),
                 showlegend=False
-            )
+            )            
             traces.append(trace)
 
         if section.is_tip and not section.is_dead:
@@ -23,7 +28,7 @@ def plot_mycel_3d_interactive(mycel: Mycel, save_path="outputs/mycelium_3d_inter
             tip_marker = go.Scatter3d(
                 x=[x], y=[y], z=[z],
                 mode='markers',
-                marker=dict(size=4, color='red'),
+                marker=dict(size=4, color=to_hex(section.color)),
                 name='Tip'
             )
             traces.append(tip_marker)
