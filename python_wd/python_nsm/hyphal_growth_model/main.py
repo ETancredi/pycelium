@@ -61,7 +61,7 @@ def setup_simulation(opts):
 
     seed1 = MPoint(0,0,0)
     seed2 = random_point_on_sphere(radius=1)
-    mycel.seed(seed1, seed2)
+    mycel.seed(seed1, seed2, color=opts.initial_color)
 
     orientator = Orientator(opts)
     aggregator = FieldAggregator()
