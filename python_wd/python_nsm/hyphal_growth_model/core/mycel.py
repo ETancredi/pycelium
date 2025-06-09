@@ -17,7 +17,7 @@ class Mycel:
         self.time_series = []
         self.biomass_history: list[float] = []
 
-    def seed(self, location: MPoint, orientation: MPoint, color: Tuple[float, float, float] = None):
+    def seed(self, location: MPoint, orientation: MPoint, opts=self.options, color: Tuple[float, float, float] = None):
         """Initialise the simulation with a single tip, carrfying RGB values."""
         root = Section(start=location, orientation=orientation, color=color)
         root.options = self.options
