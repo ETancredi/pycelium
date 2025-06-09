@@ -4,6 +4,7 @@ import math
 import numpy as np
 from core.point import MPoint
 from core.options import Options
+from typing import Optional, Tuple
 
 class Section:
     """Represents a single hyphal segment (tip or branch) in the fungal network"""
@@ -13,7 +14,7 @@ class Section:
         start: MPoint, 
         orientation: MPoint, 
         opts: Options, 
-        parent=Optional["Section"] = None, 
+        parent: Optional["Section"] = None, 
         color: Optional[Tuple[float, float, float]] = None
     ):
         self.start = start.copy()
