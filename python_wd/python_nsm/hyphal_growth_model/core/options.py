@@ -91,6 +91,11 @@ class Options:
     y_max: float = 10.0
     z_min: float = -10.0
     z_max: float = 10.0
+
+    # RGB Mutation Settings
+    initial_color: Tuple[float, float, float] = (0.5, 0.5, 0.5)
+    color_mutation_prob: float = 0.05       # chance each daughter mutates
+    color_mutation_scale: float = 0.02      # Laplace “b” parameter
     
     # Reproducibility
     seed: int = 123
