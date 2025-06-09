@@ -2,6 +2,7 @@
 
 import math
 import numpy as np
+import random
 from core.point import MPoint
 from core.options import Options
 from typing import Optional, Tuple
