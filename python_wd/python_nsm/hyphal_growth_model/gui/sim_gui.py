@@ -262,7 +262,14 @@ class OptionGUI:
         Called right before starting the sim.  We must unwrap each variable
         stored in self.entries[...] and copy it into self.options.
         """
+        # Don’t parse the RGB/mutation entries here—handle them below
+        color_keys = {
+            "initial_color_r", "initial_color_g", "initial_color_b",
+            "color_mutation_prob", "color_mutation_scale"
+        }
         for key, var in self.entries.items():
+            if key in color_keys:
+                continue
             # volume_constraint → BooleanVar
             if key == "volume_constraint":
                 self.options.volume_constraint = var.get()
