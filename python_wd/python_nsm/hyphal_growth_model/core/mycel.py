@@ -3,7 +3,7 @@
 from core.section import Section
 from core.point import MPoint
 from core.options import Options
-from typing import Tubple
+from typing import Tuple
 import numpy as np
 
 class Mycel:
