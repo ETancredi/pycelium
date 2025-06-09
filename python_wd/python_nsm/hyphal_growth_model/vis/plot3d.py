@@ -32,7 +32,7 @@ def plot_mycel_3d(mycel: Mycel, title="Hyphal Growth in 3D", save_path=None):
             x_tip, y_tip, z_tip = section.end.coords
             # tip marker in the same RGB as its parent segment
             ax.scatter(x_tip, y_tip, z_tip, 
-                       color=section.color s=10)
+                       color=section.color, s=10)
 
     if all_x and all_y and all_z:
         ax.set_xlim(min(all_x), max(all_x))
