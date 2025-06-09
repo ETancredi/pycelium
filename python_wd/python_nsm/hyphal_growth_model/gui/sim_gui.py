@@ -213,6 +213,12 @@ class OptionGUI:
         # RGB Mutator
         color_frame = tabs["RGB_Mutator"]
         row = 0
+        # RGB‐mutation master toggle
+        tk.Label(color_frame, text="Enable RGB Mutations").grid(column=0, row=row, sticky="w")
+        rgb_var = tk.BooleanVar(value=self.options.rgb_mutations_enabled)
+        ttk.Checkbutton(color_frame, variable=rgb_var).grid(column=1, row=row)
+        self.entries["rgb_mutations_enabled"] = rgb_var
+        row += 1
         # Initial RGB channels
         for idx, channel in enumerate(("R", "G", "B")):
             ttk.Label(color_frame, text=f"initial_color_{channel}").grid(column=0, row=row, sticky="w")
@@ -264,7 +270,7 @@ class OptionGUI:
         """
         # Don’t parse the RGB/mutation entries here—handle them below
         color_keys = {
-            "initial_color_r", "initial_color_g", "initial_color_b",
+            "rgb_mutations_enabled", "initial_color_r", "initial_color_g", "initial_color_b",
             "color_mutation_prob", "color_mutation_scale"
         }
         for key, var in self.entries.items():
@@ -303,11 +309,16 @@ class OptionGUI:
 
             # Parsing color options
             try:
+                # Master toggle
+                self.options.rgb_mutations_enabled = self.entries["rgb_mutations_enabled"].get()
+    
+                # Initial color channels
                 r = float(self.entries["initial_color_r"].get())
                 g = float(self.entries["initial_color_g"].get())
                 b = float(self.entries["initial_color_b"].get())
                 self.options.initial_color = (r, g, b)
     
+                # Mutation settings
                 self.options.color_mutation_prob = float(
                     self.entries["color_mutation_prob"].get()
                 )
@@ -315,9 +326,9 @@ class OptionGUI:
                     self.entries["color_mutation_scale"].get()
                 )
             except (KeyError, ValueError):
-                print("⚠️ Invalid color or mutation parameters; using defaults.")
+                print("⚠️ Invalid RGB/mutation parameters; using defaults.")
 
-        return self.options
+            return self.options
 
     def open_nutrient_editor(self):
         top = Toplevel(self.root)
