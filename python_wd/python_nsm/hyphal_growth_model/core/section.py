@@ -178,7 +178,7 @@ class Section:
             base_r, base_g, base_b = self.color
             new_r, new_g, new_b = base_r, base_g, base_b
 
-            if self.options.rgb_mutations_enabled
+            if self.options.rgb_mutations_enabled:
                 and random.random() < self.options.color_mutation_prob:
                 # Draw Laplace noise per channel
                 dr = np.random.laplace(0.0, self.options.color_mutation_scale)
