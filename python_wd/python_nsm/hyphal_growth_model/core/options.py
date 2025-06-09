@@ -93,7 +93,7 @@ class Options:
     z_max: float = 10.0
 
     # RGB Mutation Settings
-    RGB_mutations_enabled: bool = False
+    rgb_mutations_enabled: bool = False
     initial_color: Tuple[float, float, float] = (0.5, 0.5, 0.5)
     color_mutation_prob: float = 0.05       # chance each daughter mutates
     color_mutation_scale: float = 0.02      # Laplace “b” parameter
