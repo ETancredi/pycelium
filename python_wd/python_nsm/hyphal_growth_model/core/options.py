@@ -1,6 +1,7 @@
 # core/options.py
 
 from dataclasses import dataclass, field
+from typing import List, Tuple
 
 @dataclass
 class Options:
@@ -77,10 +78,19 @@ class Options:
     nutrient_radius: float = 50.0                    
     nutrient_decay: float = 0.05                     
 
-    # In core/options.py
+    # Anisotropy
     anisotropy_enabled: bool = False
     anisotropy_vector: tuple = (1.0, 0.0, 0.0)  
     anisotropy_strength: float = 0.1            
+
+    # Volume Constraint
+    volume_constraint: bool = False
+    x_min: float = -10.0
+    x_max: float = 10.0
+    y_min: float = -10.0
+    y_max: float = 10.0
+    z_min: float = -10.0
+    z_max: float = 10.0
     
     # Reproducibility
     seed: int = 123
