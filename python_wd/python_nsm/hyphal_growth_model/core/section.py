@@ -3,11 +3,19 @@
 import math
 import numpy as np
 from core.point import MPoint
+from core.options import Options
 
 class Section:
     """Represents a single hyphal segment (tip or branch) in the fungal network"""
 
-    def __init__(self, start: MPoint, orientation: MPoint, parent=None):
+    def __init__(
+        self, 
+        start: MPoint, 
+        orientation: MPoint, 
+        opts: Options, 
+        parent=Optional["Section"] = None, 
+        color: Optional[Tuple[float, float, float]] = None
+    ):
         self.start = start.copy()
         self.orientation = orientation.copy().normalise()
         self.length = 0.0
@@ -23,10 +31,17 @@ class Section:
         self.end = self.start.copy()
         self.subsegments = [(self.start.copy(), self.start.copy())]
 
-        self.options = None
+        self.options = opts
         self.field_aggregator = None
 
-        self.direction_memory = self.orientation.copy()  
+        self.direction_memory = self.orientation.copy() 
+        # Initialise RGB lineage color:
+            # For seed segments, use passed-in color or fallback to opts.initial_color
+            # for branches, colour must be passed by the caller
+        if parent is None:
+            self.color = color if color is not None else opts.initial_color
+        else:
+            self.color = color # guaranteed to be provided in maybe_branch()
 
     def set_field_aggregator(self, aggregator):
         self.field_aggregator = aggregator
@@ -102,7 +117,7 @@ class Section:
         if self.length < 1e-5:
             self.is_dead = True
 
-    def maybe_branch(self, branch_chance: float, tip_count: int = 0):
+    def maybe_branch(self, branch_chance: float, tip_count: int = 0) -> Optional["Section"]:
         if not self.is_tip or self.is_dead:
             return None
 
@@ -157,9 +172,31 @@ class Section:
                 child_orientation = self.orientation.copy()
                 self.orientation = rotated_orientation
 
-            child = Section(self.end.copy(), child_orientation, parent=self)
+            # RGB Mutation color inheritance and Laplace distribution
+            base_r, base_g, base_b = self.color
+            new_r, new_g, new_b = base_r, base_g, base_b
+
+            if random.random() < self.options.color_mutation_prob:
+                # Draw Laplace noise per channel
+                dr = np.random.laplace(0.0, self.options.color_mutation_scale)
+                dg = np.random.laplace(0.0, self.options.color_mutation_scale)
+                db = np.random.laplace(0.0, self.options.color_mutation_scale)
+                # Clamp to [0,1]
+                new_r = min(max(base_r + dr, 0.0), 1.0)
+                new_g = min(max(base_g + dg, 0.0), 1.0)
+                new_b = min(max(base_b + db, 0.0), 1.0)
+
+            child_color = (new_r, new_g, new_b)
+
+            child = Section(
+                self.end.copy(), 
+                child_orientation, 
+                opts=self.options,
+                parent=self, 
+                color=child_color
+            )
+            
             child.is_tip = True
-            child.options = self.options
             child.direction_memory = self.direction_memory.copy()
             child.set_field_aggregator(self.field_aggregator)
 
