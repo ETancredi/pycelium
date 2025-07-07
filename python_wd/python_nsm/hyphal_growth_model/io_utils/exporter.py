@@ -25,14 +25,30 @@ def export_to_csv(mycel: Mycel, filename="mycelium.csv", all_time=False):
                     ]
                     writer.writerow(row)
         else:
-            writer.writerow(["x0", "y0", "z0", 
-                             "x1", "y1", "z1", 
+            writer.writerow(["id", "parent_id",
+                             "x0", "y0", "z0", "x1", "y1", "z1", 
                              "length", "age", "is_tip", "is_dead", 
                              "r", "g", "b"])
             for s in mycel.get_all_segments():
+                
+                # grab colour and parent id
                 r, g, b = getattr(s, "color", (None, None, None))
-                row = list(s.start.coords) + list(s.end.coords)
-                row += [s.length, s.age, s.is_tip, s.is_dead, r, g, b]
+                parent_id = s.parent.id if s.parent is not None else ""
+                
+                # assemble the row with id and parent_id firt
+                row = [
+                    s.id,
+                    parent_id,
+                    *s.start.coords,
+                    *s.end.coords,
+                    s.length,
+                    s.age,
+                    s.is_tip,
+                    s.is_dead,
+                    r,
+                    g,
+                    b
+                ]
                 writer.writerow(row)
 
     print(f"📄 CSV exported: {filename}")
