@@ -3,9 +3,13 @@
 import math
 import numpy as np
 import random
+import itertools
 from core.point import MPoint
 from core.options import Options
 from typing import Optional, Tuple
+
+# Global counter for unique Section IDs
+_SECTION_ID_GEN = itertools.count()
 
 class Section:
     """Represents a single hyphal segment (tip or branch) in the fungal network"""
@@ -18,6 +22,7 @@ class Section:
         parent: Optional["Section"] = None, 
         color: Optional[Tuple[float, float, float]] = None
     ):
+        self.id = next(_SECTION_ID_GEN)
         self.start = start.copy()
         self.orientation = orientation.copy().normalise()
         self.length = 0.0
