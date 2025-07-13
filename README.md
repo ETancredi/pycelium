@@ -115,7 +115,35 @@ Edit `config/batch_config.json` with multiple `runs`. Example:
   ]
 }
 ```
+---
 
+## Flowchart
+
+```mermaid
+flowchart TD
+    Start["Start Simulation"]
+    Setup["setup_simulation(opts)"]
+    Seed["mycel.seed(...)"]
+    Loop["For each step 0..N"]
+    FieldAgg["aggregator.clear() & add_sections()"]
+    Orient["orientator.compute(tip)"]
+    MycelStep["mycel.step()"]
+    Grow["Section.grow(rate, dt)"]
+    Update["Section.update()"]
+    Destruct["Destructor checks\n(age, length, density)"]
+    Branch["section.maybe_branch()"]
+    Append["Extend new_sections"]
+    Record["Record time_series & biomass"]
+    Check{"AutoStop?"}
+    NextStep["step+1"]
+
+    Start --> Setup --> Seed --> Loop
+    Loop --> FieldAgg --> Orient --> MycelStep
+    MycelStep --> Grow --> Update --> Destruct --> Branch --> Append --> Record
+    Record --> Check
+    Check -- no --> NextStep --> Loop
+    Check -- yes --> End["End Simulation"]
+```
 ---
 
 ## Output Files
