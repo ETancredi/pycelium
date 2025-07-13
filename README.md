@@ -130,7 +130,7 @@ flowchart TD
     MycelStep["mycel.step()"]
     Grow["Section.grow(rate, dt)"]
     Update["Section.update()"]
-    Destruct["Destructor checks\n(age, length, density)"]
+    Destruct["Destructor checks (age, length, density)"]
     Branch["section.maybe_branch()"]
     Append["Extend new_sections"]
     Record["Record time_series & biomass"]
