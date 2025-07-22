@@ -117,7 +117,7 @@ Edit `config/batch_config.json` with multiple `runs`. Example:
 ```
 ---
 
-## Flowchart
+## Runtime Workflow
 
 ```mermaid
 flowchart TD
