@@ -1,4 +1,4 @@
-# Hyphal Growth Model
+# Pycelium
 
 A 3D simulation of fungal mycelium growth with support for GUI launching, CLI batch runs, and parameter sweeps. Includes nutrient attraction, density sensitivity, branching control, and anisotropy.
 
