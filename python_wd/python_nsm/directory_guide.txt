@@ -1,4 +1,4 @@
-hyphal_growth_model_v3/
+hyphal_growth_model
 ├── main.py                      	# Entry point for simulation logic (CLI/GUI/ runs call this)
 │
 ├── config/                      	# Holds simulation configuration files
