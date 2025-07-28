@@ -21,7 +21,7 @@ from compute.field_aggregator import FieldAggregator
 from io_utils.checkpoint import CheckpointSaver
 from io_utils.autostop import AutoStop
 from io_utils.grid_export import export_grid_to_csv, export_grid_to_png
-from io_utils.exporter import export_to_csv, export_to_obj, export_tip_history, export_biomass_history
+from io_utils.exporter import export_to_csv, export_to_obj, export_tip_history, export_biomass_history, export_phenotypes_to_csv
 
 from control.runtime_mutator import RuntimeMutator
 
