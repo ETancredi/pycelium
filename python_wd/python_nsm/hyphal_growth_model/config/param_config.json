@@ -65,8 +65,9 @@
 
   "rgb_mutations_enabled": false,
   "initial_color": [0.5, 0.5, 0.5],
-  "color_mutation_prob": 0.05,
-  "color_mutation_scale": 0.02,
+  
+  "mutation_prob": 0.01,
+  "mutation_scale": 0.05,
 
   "volume_constraint": false,
   "x_min": -10.0,
