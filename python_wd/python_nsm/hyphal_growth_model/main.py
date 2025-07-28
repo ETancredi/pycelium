@@ -191,6 +191,7 @@ def generate_outputs(mycel, components, output_dir="outputs"):
 
     export_tip_history(mycel, f"{output_dir}/mycelium_time_series.csv")
     export_biomass_history(mycel, f"{output_dir}/biomass_and_tips_history.csv")
+    export_phenotypes_to_csv(mycel, filename = f"{output_dir}/phenotypes.csv")
 
 def simulate(opts, steps=120):
     mycel, components = setup_simulation(opts)
