@@ -48,6 +48,7 @@ class OptionGUI:
             "Density": ttk.Frame(notebook),
             "Nutrient": ttk.Frame(notebook),
             "Boundary": ttk.Frame(notebook),
+            "RGB_Mutator": ttk.Frame(notebook),
             "Run": ttk.Frame(notebook)
         }
         for name, frame in tabs.items():
@@ -208,7 +209,35 @@ class OptionGUI:
         vc_var.trace_add("write", toggle_boundary_fields)
         # Call once to ensure correct initial state:
         toggle_boundary_fields()
-        
+
+        # RGB Mutator
+        color_frame = tabs["RGB_Mutator"]
+        row = 0
+        # RGB‐mutation master toggle
+        tk.Label(color_frame, text="Enable RGB Mutations").grid(column=0, row=row, sticky="w")
+        rgb_var = tk.BooleanVar(value=self.options.rgb_mutations_enabled)
+        ttk.Checkbutton(color_frame, variable=rgb_var).grid(column=1, row=row)
+        self.entries["rgb_mutations_enabled"] = rgb_var
+        row += 1
+        # Initial RGB channels
+        for idx, channel in enumerate(("R", "G", "B")):
+            ttk.Label(color_frame, text=f"initial_color_{channel}").grid(column=0, row=row, sticky="w")
+            var = tk.StringVar(value=str(self.options.initial_color[idx]))
+            ttk.Entry(color_frame, textvariable=var, width=10).grid(column=1, row=row)
+            self.entries[f"initial_color_{channel.lower()}"] = var
+            row += 1
+        # Mutation probability
+        ttk.Label(color_frame, text="color_mutation_prob").grid(column=0, row=row, sticky="w")
+        prob_var = tk.StringVar(value=str(self.options.color_mutation_prob))
+        ttk.Entry(color_frame, textvariable=prob_var, width=10).grid(column=1, row=row)
+        self.entries["color_mutation_prob"] = prob_var
+        row += 1
+        # Mutation scale (Laplace b)
+        ttk.Label(color_frame, text="color_mutation_scale").grid(column=0, row=row, sticky="w")
+        scale_var = tk.StringVar(value=str(self.options.color_mutation_scale))
+        ttk.Entry(color_frame, textvariable=scale_var, width=10).grid(column=1, row=row)
+        self.entries["color_mutation_scale"] = scale_var
+
         # Run tab
         run_frame = tabs["Run"]
         ttk.Label(run_frame, text="Max Steps").grid(column=0, row=0, sticky="e")
@@ -239,7 +268,14 @@ class OptionGUI:
         Called right before starting the sim.  We must unwrap each variable
         stored in self.entries[...] and copy it into self.options.
         """
+        # Don’t parse the RGB/mutation entries here—handle them below
+        color_keys = {
+            "rgb_mutations_enabled", "initial_color_r", "initial_color_g", "initial_color_b",
+            "color_mutation_prob", "color_mutation_scale"
+        }
         for key, var in self.entries.items():
+            if key in color_keys:
+                continue
             # volume_constraint → BooleanVar
             if key == "volume_constraint":
                 self.options.volume_constraint = var.get()
@@ -271,7 +307,28 @@ class OptionGUI:
                 parsed = current_val
             setattr(self.options, key, parsed)
 
-        return self.options
+            # Parsing color options
+            try:
+                # Master toggle
+                self.options.rgb_mutations_enabled = self.entries["rgb_mutations_enabled"].get()
+    
+                # Initial color channels
+                r = float(self.entries["initial_color_r"].get())
+                g = float(self.entries["initial_color_g"].get())
+                b = float(self.entries["initial_color_b"].get())
+                self.options.initial_color = (r, g, b)
+    
+                # Mutation settings
+                self.options.color_mutation_prob = float(
+                    self.entries["color_mutation_prob"].get()
+                )
+                self.options.color_mutation_scale = float(
+                    self.entries["color_mutation_scale"].get()
+                )
+            except (KeyError, ValueError):
+                print("⚠️ Invalid RGB/mutation parameters; using defaults.")
+
+            return self.options
 
     def open_nutrient_editor(self):
         top = Toplevel(self.root)

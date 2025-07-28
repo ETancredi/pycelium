@@ -3,6 +3,7 @@
 from core.section import Section
 from core.point import MPoint
 from core.options import Options
+from typing import Tuple
 import numpy as np
 
 class Mycel:
@@ -16,9 +17,14 @@ class Mycel:
         self.time_series = []
         self.biomass_history: list[float] = []
 
-    def seed(self, location: MPoint, orientation: MPoint):
-        """Initialise the simulation with a single tip."""
-        root = Section(start=location, orientation=orientation)
+    def seed(self, location: MPoint, orientation: MPoint, color: Tuple[float, float, float] = None):
+        """Initialise the simulation with a single tip, carrfying RGB values."""
+        root = Section(start=location, 
+                       orientation=orientation, 
+                       opts=self.options, 
+                       parent=None, 
+                       color=color
+                      )
         root.options = self.options
         root.set_field_aggregator(None)  
         self.sections.append(root)
