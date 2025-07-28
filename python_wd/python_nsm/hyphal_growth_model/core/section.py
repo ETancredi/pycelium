@@ -21,7 +21,8 @@ class Section:
         orientation: MPoint, 
         opts: Options, 
         parent: Optional["Section"] = None, 
-        color: Optional[Tuple[float, float, float]] = None
+        color: Optional[Tuple[float, float, float]] = None,
+        phenotype: Optional[Phenotype] = None
     ):
         self.id = next(_SECTION_ID_GEN)
         self.start = start.copy()
@@ -44,12 +45,10 @@ class Section:
 
         self.direction_memory = self.orientation.copy() 
         # Initialise RGB lineage color:
-            # For seed segments, use passed-in color or fallback to opts.initial_color
-            # for branches, colour must be passed by the caller
         if parent is None:
             self.color = color if color is not None else opts.initial_color
         else:
-            self.color = color # guaranteed to be provided in maybe_branch()
+            self.color = color
 
         # Attach phenotype (must be provided)
         self.phenotype = phenotype
@@ -77,27 +76,20 @@ class Section:
         opts = self.options
         if opts.volume_constraint:
             x, y, z = self.end.coords
-            
-            # If any coordinate is outside, clamp and stop future growth:
+
             out_of_bounds = False
-            
-            # X-axis:
             if x < opts.x_min:
                 x = opts.x_min
                 out_of_bounds = True
             elif x > opts.x_max:
                 x = opts.x_max
                 out_of_bounds = True
-
-            # Y-axis:
             if y < opts.y_min:
                 y = opts.y_min
                 out_of_bounds = True
             elif y > opts.y_max:
                 y = opts.y_max
                 out_of_bounds = True
-            
-            # Z-axis:
             if z < opts.z_min:
                 z = opts.z_min
                 out_of_bounds = True
@@ -106,15 +98,11 @@ class Section:
                 out_of_bounds = True
 
             if out_of_bounds:
-                # Clamp the offending tip to the fit it hits:
                 self.end = MPoint(x, y, z)
-                # Recompute length so that the segment does not extend past the box:
                 self.length = self.start.distance_to(self.end)
-                # Inactivate the tip, so it will not continue to grow
                 self.is_tip = False
                 return
 
-        # Update directional memory (EMA-style)
         if self.options and hasattr(self.options, "direction_memory_blend"):
             alpha = self.options.direction_memory_blend
             self.direction_memory = (
@@ -151,7 +139,6 @@ class Section:
             axis = MPoint(0, 0, 1)
             rotated_orientation = self.orientation.copy().rotated_around(axis, angle)
 
-            # 🌀 Curvature bias
             if self.options.curvature_branch_bias > 0 and len(self.subsegments) >= 3:
                 p1 = self.subsegments[-3][0]
                 p2 = self.subsegments[-2][0]
@@ -159,7 +146,6 @@ class Section:
                 v1 = p2.copy().subtract(p1).normalise()
                 v2 = p3.copy().subtract(p2).normalise()
                 curve = v2.copy().subtract(v1).normalise()
-
                 rotated_orientation = (
                     rotated_orientation.copy().scale(1.0 - self.options.curvature_branch_bias)
                     .add(curve.copy().scale(self.options.curvature_branch_bias))
@@ -167,7 +153,6 @@ class Section:
                 )
                 print(f"🌀 Curvature blended into branch direction: strength={self.options.curvature_branch_bias:.2f}")
 
-            # 🧠 Memory-based bias
             if self.options.direction_memory_blend > 0:
                 rotated_orientation = (
                     rotated_orientation.copy().scale(1.0 - self.options.direction_memory_blend)
@@ -183,30 +168,22 @@ class Section:
                 child_orientation = self.orientation.copy()
                 self.orientation = rotated_orientation
 
-            # RGB Mutation color inheritance and Laplace distribution
-            base_r, base_g, base_b = self.color
-            new_r, new_g, new_b = base_r, base_g, base_b
-
-            if self.options.rgb_mutations_enabled and random.random() < self.options.color_mutation_prob:
-                # Draw Laplace noise per channel
-                dr = np.random.laplace(0.0, self.options.color_mutation_scale)
-                dg = np.random.laplace(0.0, self.options.color_mutation_scale)
-                db = np.random.laplace(0.0, self.options.color_mutation_scale)
-                # Clamp to [0,1]
-                new_r = min(max(base_r + dr, 0.0), 1.0)
-                new_g = min(max(base_g + dg, 0.0), 1.0)
-                new_b = min(max(base_b + db, 0.0), 1.0)
-
-            child_color = (new_r, new_g, new_b)
+            child_phenotype = self.phenotype.copy_with_mutation(
+                mutation_prob=0.1,
+                mutation_scale=0.05,
+                seed_phenotype=None
+            )
+            child_color = child_phenotype.color
 
             child = Section(
-                self.end.copy(), 
-                child_orientation, 
+                self.end.copy(),
+                child_orientation,
                 opts=self.options,
-                parent=self, 
-                color=child_color
+                parent=self,
+                color=child_color,
+                phenotype=child_phenotype
             )
-            
+
             child.is_tip = True
             child.direction_memory = self.direction_memory.copy()
             child.set_field_aggregator(self.field_aggregator)
