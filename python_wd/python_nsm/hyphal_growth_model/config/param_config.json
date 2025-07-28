@@ -19,7 +19,7 @@
   "length_growth_coef": 0.1,
   "curvature_branch_bias": 0.25,
 
-  "direction_memory_blend": 0.2,
+  "direction_memory_blend": 0.1,
   "field_alignment_boost": 0.2,
   "field_curvature_influence": 0.2,
 
@@ -61,5 +61,18 @@
 
   "anisotropy_enabled": false,
   "anisotropy_vector": [1.0, 0.0, 0.0],
-  "anisotropy_strength": 0.1
+  "anisotropy_strength": 0.1,
+
+  "rgb_mutations_enabled": false,
+  "initial_color": [0.5, 0.5, 0.5],
+  "color_mutation_prob": 0.05,
+  "color_mutation_scale": 0.02,
+
+  "volume_constraint": false,
+  "x_min": -10.0,
+  "x_max": 10.0,
+  "y_min": -10.0,
+  "y_max": 10.0,
+  "z_min": -10.0,
+  "z_max": 10.0
 }
