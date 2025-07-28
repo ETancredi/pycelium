@@ -1,8 +1,8 @@
 # io_utils/exporter.py
 
+import csv
 from core.mycel import Mycel
 from core.section import Section
-import csv
 
 def export_to_csv(mycel: Mycel, filename="mycelium.csv", all_time=False):
     import csv
@@ -99,3 +99,34 @@ def export_biomass_history(mycel: Mycel, filename: str):
             tips_count = len(mycel.step_history[i][1]) if i < len(mycel.step_history) else 0
             writer.writerow([t, tips_count, biomass])
     print(f"🪵 Biomass & tip‐count history exported: {filename}")
+
+def export_phenotypes_to_csv(mycel: Mycel, filename="outputs/phenotype_registry.csv"):
+    """Export phenotype information for all tips (alive or dead) to CSV."""
+    tips = [s for s in mycel.get_all_segments() if s.is_tip]
+
+    if not tips:
+        print("⚠️ No tips found to export phenotypes.")
+        return
+
+    first_pheno = tips[0].phenotype.to_dict()
+    pheno_keys = list(first_pheno.keys())
+
+    with open(filename, "w", newline="") as f:
+        writer = csv.writer(f)
+
+        header = [
+            "section_id", "parent_id", "x", "y", "z"
+        ] + pheno_keys
+
+        writer.writerow(header)
+
+        for s in tips:
+            pheno_dict = s.phenotype.to_dict()
+            row = [
+                s.id,
+                s.parent.id if s.parent else "",
+                *s.end.coords,
+            ] + [pheno_dict[k] for k in pheno_keys]
+            writer.writerow(row)
+
+    print(f"🧬 Exported phenotype data for {len(tips)} tips to {filename}")
