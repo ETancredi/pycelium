@@ -1,5 +1,3 @@
-# core/phenotypes.py
-
 import random
 import copy
 import numpy as np
@@ -30,21 +28,21 @@ class Phenotype:
     charge_unit_length: float
     neighbour_radius: float
 
-    # RGB mutation traits
+    # Color trait
     color: tuple  # (r, g, b)
     rgb_mutations_enabled: bool
-    color_mutation_prob: float
-    color_mutation_scale: float
+
+    # Phenotype-level mutation rate (mutable)
+    mutation_prob: float
 
     # Mutation ancestry flags
     mutated_from_seed: bool = False
     mutated_from_parent: bool = False
 
-    def copy_with_mutation(self, mutation_prob=0.1, mutation_scale=0.05, seed_phenotype=None):
+    def copy_with_mutation(self, mutation_scale: float, seed_phenotype=None):
         """
         Return a mutated copy of this phenotype.
-        mutation_prob: chance of mutating each trait
-        mutation_scale: Laplace scale parameter (b)
+        mutation_scale: Laplace scale parameter for mutations.
         seed_phenotype: used to track mutated_from_seed
         """
         new_pheno = copy.deepcopy(self)
@@ -52,33 +50,27 @@ class Phenotype:
         new_pheno.mutated_from_seed = False
 
         for field_name, value in asdict(self).items():
-            if field_name in ("color", "rgb_mutations_enabled", "color_mutation_prob", "color_mutation_scale",
-                              "mutated_from_seed", "mutated_from_parent"):
+            # Skip ancestry flags
+            if field_name in ("mutated_from_seed", "mutated_from_parent"):
                 continue
-            if random.random() < mutation_prob:
-                mutation = np.random.laplace(0.0, mutation_scale)
-                new_value = value + mutation
-                # Clamp or round if needed
+
+            if random.random() < self.mutation_prob:
+                # Laplace-distributed mutation
+                delta = np.random.laplace(0.0, mutation_scale)
+                new_value = value
                 if isinstance(value, int):
-                    new_value = max(0, round(new_value))
+                    new_value = max(0, round(value + delta))
                 elif isinstance(value, float):
-                    new_value = max(0.0, new_value)
+                    new_value = max(0.0, value + delta)
+                elif isinstance(value, tuple):
+                    # Mutate each channel of color
+                    new_value = tuple(
+                        min(max(c + delta, 0.0), 1.0) for c in value
+                    )
                 setattr(new_pheno, field_name, new_value)
                 new_pheno.mutated_from_parent = True
 
-        # RGB color mutation
-        if self.rgb_mutations_enabled and random.random() < self.color_mutation_prob:
-            r, g, b = self.color
-            dr = np.random.laplace(0.0, self.color_mutation_scale)
-            dg = np.random.laplace(0.0, self.color_mutation_scale)
-            db = np.random.laplace(0.0, self.color_mutation_scale)
-            new_pheno.color = (
-                min(max(r + dr, 0.0), 1.0),
-                min(max(g + dg, 0.0), 1.0),
-                min(max(b + db, 0.0), 1.0)
-            )
-            new_pheno.mutated_from_parent = True
-
+        # Check against seed phenotype
         if seed_phenotype and new_pheno != seed_phenotype:
             new_pheno.mutated_from_seed = True
 
@@ -90,7 +82,7 @@ class Phenotype:
     def __eq__(self, other):
         if not isinstance(other, Phenotype):
             return False
-        # Compare traits (not flags)
+        # Compare all trait fields except flags
         return all(
             getattr(self, f) == getattr(other, f)
             for f in self.__dataclass_fields__
