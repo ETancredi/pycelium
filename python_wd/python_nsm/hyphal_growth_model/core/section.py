@@ -50,6 +50,9 @@ class Section:
         else:
             self.color = color # guaranteed to be provided in maybe_branch()
 
+        # Attach phenotype (must be provided)
+        self.phenotype = phenotype
+
     def set_field_aggregator(self, aggregator):
         self.field_aggregator = aggregator
 
