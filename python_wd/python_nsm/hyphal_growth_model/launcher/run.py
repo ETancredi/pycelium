@@ -1,9 +1,12 @@
 # launcher/run.py
 
+import sys
+import os
 import argparse
 from config.sim_config import load_options_from_json, load_options_from_cli
 from gui.sim_gui import OptionGUI
 from main import simulate
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 def run_gui():
     print("🖥️ Launching GUI mode...")
