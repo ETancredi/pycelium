@@ -12,6 +12,7 @@ A 3D simulation of fungal mycelium growth with support for GUI launching, CLI ba
 - 🧪 CLI + JSON-based batch config
 - 🔁 Parallel batch processing with auto-scaling
 - 🎥 Visualisation & animation outputs (2D, 3D, video)
+- 🧬 RGB and Phenotype mutation logic
 
 ---
 
