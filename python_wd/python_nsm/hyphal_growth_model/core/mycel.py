@@ -19,15 +19,45 @@ class Mycel:
         self.biomass_history: list[float] = []
 
     def seed(self, location: MPoint, orientation: MPoint, color: Tuple[float, float, float] = None):
-        """Initialise the simulation with a single tip, carrfying RGB values."""
-        root = Section(start=location, 
-                       orientation=orientation, 
-                       opts=self.options, 
-                       parent=None, 
-                       color=color
-                      )
+        """Initialise the simulation with a single tip, carrying RGB values and base phenotype."""
+        base_phenotype = Phenotype(
+            growth_rate=self.options.growth_rate,
+            branch_probability=self.options.branch_probability,
+            max_branches=self.options.max_branches,
+            branch_angle_spread=self.options.branch_angle_spread,
+            field_threshold=self.options.field_threshold,
+            branch_time_window=self.options.branch_time_window,
+            branch_sensitivity=self.options.branch_sensitivity,
+            leading_branch_prob=self.options.leading_branch_prob,
+            autotropism=self.options.autotropism,
+            length_growth_coef=self.options.length_growth_coef,
+            curvature_branch_bias=self.options.curvature_branch_bias,
+            direction_memory_blend=self.options.direction_memory_blend,
+            field_alignment_boost=self.options.field_alignment_boost,
+            field_curvature_influence=self.options.field_curvature_influence,
+            max_length=self.options.max_length,
+            max_age=self.options.max_age,
+            min_tip_age=self.options.min_tip_age,
+            min_tip_length=self.options.min_tip_length,
+            density_threshold=self.options.density_threshold,
+            charge_unit_length=self.options.charge_unit_length,
+            neighbour_radius=self.options.neighbour_radius,
+            color=color if color else self.options.initial_color,
+            rgb_mutations_enabled=self.options.rgb_mutations_enabled,
+            color_mutation_prob=self.options.color_mutation_prob,
+            color_mutation_scale=self.options.color_mutation_scale
+        )
+
+        root = Section(
+            start=location, 
+            orientation=orientation, 
+            opts=self.options, 
+            parent=None, 
+            color=color,
+            phenotype=base_phenotype
+        )
         root.options = self.options
-        root.set_field_aggregator(None)  
+        root.set_field_aggregator(None)
         self.sections.append(root)
 
     def step(self):
