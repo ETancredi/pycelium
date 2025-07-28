@@ -6,6 +6,7 @@ import random
 import itertools
 from core.point import MPoint
 from core.options import Options
+from core.phenotypes import Phenotype
 from typing import Optional, Tuple
 
 # Global counter for unique Section IDs
