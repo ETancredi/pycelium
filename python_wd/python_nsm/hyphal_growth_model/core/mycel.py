@@ -3,6 +3,7 @@
 from core.section import Section
 from core.point import MPoint
 from core.options import Options
+from core.phenotypes import Phenotype
 from typing import Tuple
 import numpy as np
 
