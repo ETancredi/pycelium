@@ -44,13 +44,13 @@ class Section:
         self.field_aggregator = None
 
         self.direction_memory = self.orientation.copy() 
-        # Initialise RGB lineage color:
+        # Initialise color
         if parent is None:
             self.color = color if color is not None else opts.initial_color
         else:
             self.color = color
 
-        # Attach phenotype (must be provided)
+        # Attach phenotype
         self.phenotype = phenotype
 
     def set_field_aggregator(self, aggregator):
@@ -60,7 +60,7 @@ class Section:
         if not self.is_tip or self.is_dead:
             return
 
-        if self.options and self.options.length_scaled_growth:
+        if self.options.length_scaled_growth:
             scale_factor = 1 + self.length * self.options.length_growth_coef
             rate *= scale_factor
 
@@ -72,30 +72,22 @@ class Section:
         self.age += dt
         self.subsegments.append((prev_end, self.end.copy()))
 
-        # Volume Constraint Check (tip stops at boundary)
-        opts = self.options
-        if opts.volume_constraint:
+        # Volume Constraint Check
+        if self.options.volume_constraint:
             x, y, z = self.end.coords
-
             out_of_bounds = False
-            if x < opts.x_min:
-                x = opts.x_min
-                out_of_bounds = True
-            elif x > opts.x_max:
-                x = opts.x_max
-                out_of_bounds = True
-            if y < opts.y_min:
-                y = opts.y_min
-                out_of_bounds = True
-            elif y > opts.y_max:
-                y = opts.y_max
-                out_of_bounds = True
-            if z < opts.z_min:
-                z = opts.z_min
-                out_of_bounds = True
-            elif z > opts.z_max:
-                z = opts.z_max
-                out_of_bounds = True
+            if x < self.options.x_min:
+                x = self.options.x_min; out_of_bounds = True
+            elif x > self.options.x_max:
+                x = self.options.x_max; out_of_bounds = True
+            if y < self.options.y_min:
+                y = self.options.y_min; out_of_bounds = True
+            elif y > self.options.y_max:
+                y = self.options.y_max; out_of_bounds = True
+            if z < self.options.z_min:
+                z = self.options.z_min; out_of_bounds = True
+            elif z > self.options.z_max:
+                z = self.options.z_max; out_of_bounds = True
 
             if out_of_bounds:
                 self.end = MPoint(x, y, z)
@@ -103,13 +95,13 @@ class Section:
                 self.is_tip = False
                 return
 
-        if self.options and hasattr(self.options, "direction_memory_blend"):
-            alpha = self.options.direction_memory_blend
-            self.direction_memory = (
-                self.direction_memory.scale(1 - alpha)
-                .add(self.orientation.copy().scale(alpha))
-                .normalise()
-            )
+        # Update directional memory blending
+        alpha = self.options.direction_memory_blend
+        self.direction_memory = (
+            self.direction_memory.scale(1 - alpha)
+            .add(self.orientation.copy().scale(alpha))
+            .normalise()
+        )
 
     def update(self):
         self.length = self.start.distance_to(self.end)
@@ -119,13 +111,10 @@ class Section:
     def maybe_branch(self, branch_chance: float, tip_count: int = 0) -> Optional["Section"]:
         if not self.is_tip or self.is_dead:
             return None
-
         if self.branches_made >= self.options.max_branches:
             return None
-
         if self.age < self.options.min_tip_age or self.length < self.options.min_tip_length:
             return None
-
         if self.age > self.options.branch_time_window:
             return None
 
@@ -134,11 +123,13 @@ class Section:
             if field_strength >= self.options.field_threshold:
                 return None
 
-        if np.random.rand() < branch_chance:
-            angle = np.random.uniform(-self.options.branch_angle_spread, self.options.branch_angle_spread)
+        if random.random() < branch_chance:
+            # Determine new orientation
+            angle = random.uniform(-self.options.branch_angle_spread, self.options.branch_angle_spread)
             axis = MPoint(0, 0, 1)
-            rotated_orientation = self.orientation.copy().rotated_around(axis, angle)
+            rotated = self.orientation.copy().rotated_around(axis, angle)
 
+            # Curvature bias
             if self.options.curvature_branch_bias > 0 and len(self.subsegments) >= 3:
                 p1 = self.subsegments[-3][0]
                 p2 = self.subsegments[-2][0]
@@ -146,44 +137,42 @@ class Section:
                 v1 = p2.copy().subtract(p1).normalise()
                 v2 = p3.copy().subtract(p2).normalise()
                 curve = v2.copy().subtract(v1).normalise()
-                rotated_orientation = (
-                    rotated_orientation.copy().scale(1.0 - self.options.curvature_branch_bias)
+                rotated = (
+                    rotated.copy().scale(1 - self.options.curvature_branch_bias)
                     .add(curve.copy().scale(self.options.curvature_branch_bias))
                     .normalise()
                 )
-                print(f"🌀 Curvature blended into branch direction: strength={self.options.curvature_branch_bias:.2f}")
 
+            # Directional memory blend
             if self.options.direction_memory_blend > 0:
-                rotated_orientation = (
-                    rotated_orientation.copy().scale(1.0 - self.options.direction_memory_blend)
+                rotated = (
+                    rotated.copy().scale(1 - self.options.direction_memory_blend)
                     .add(self.direction_memory.copy().scale(self.options.direction_memory_blend))
                     .normalise()
                 )
-                print(f"🧠 Directional memory blended into branch orientation: alpha={self.options.direction_memory_blend:.2f}")
 
-            keep_self_leading = np.random.rand() < self.options.leading_branch_prob
-            if keep_self_leading:
-                child_orientation = rotated_orientation
+            # Choose which branch keeps original orientation
+            if random.random() < self.options.leading_branch_prob:
+                child_orient = rotated
             else:
-                child_orientation = self.orientation.copy()
-                self.orientation = rotated_orientation
+                child_orient = self.orientation.copy()
+                self.orientation = rotated
 
-            child_phenotype = self.phenotype.copy_with_mutation(
-                mutation_prob=0.1,
-                mutation_scale=0.05,
-                seed_phenotype=None
+            # Mutate phenotype with global settings
+            child_pheno = self.phenotype.copy_with_mutation(
+                mutation_scale=self.options.mutation_scale
             )
-            child_color = child_phenotype.color
+            child_color = child_pheno.color
 
+            # Create child section with mutated phenotype
             child = Section(
-                self.end.copy(),
-                child_orientation,
+                start=self.end.copy(),
+                orientation=child_orient,
                 opts=self.options,
                 parent=self,
                 color=child_color,
-                phenotype=child_phenotype
+                phenotype=child_pheno
             )
-
             child.is_tip = True
             child.direction_memory = self.direction_memory.copy()
             child.set_field_aggregator(self.field_aggregator)
