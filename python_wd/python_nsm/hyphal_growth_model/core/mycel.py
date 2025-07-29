@@ -20,6 +20,7 @@ class Mycel:
 
     def seed(self, location: MPoint, orientation: MPoint, color: Tuple[float, float, float] = None):
         """Initialise the simulation with a single tip, carrying RGB values and base phenotype."""
+        # Create base phenotype from options
         base_phenotype = Phenotype(
             growth_rate=self.options.growth_rate,
             branch_probability=self.options.branch_probability,
@@ -42,21 +43,19 @@ class Mycel:
             density_threshold=self.options.density_threshold,
             charge_unit_length=self.options.charge_unit_length,
             neighbour_radius=self.options.neighbour_radius,
-            color=color if color else self.options.initial_color,
+            color=color if color is not None else self.options.initial_color,
             rgb_mutations_enabled=self.options.rgb_mutations_enabled,
-            color_mutation_prob=self.options.color_mutation_prob,
-            color_mutation_scale=self.options.color_mutation_scale
+            mutation_prob=self.options.mutation_prob
         )
 
         root = Section(
-            start=location, 
-            orientation=orientation, 
-            opts=self.options, 
-            parent=None, 
-            color=color,
+            start=location,
+            orientation=orientation,
+            opts=self.options,
+            parent=None,
+            color=base_phenotype.color,
             phenotype=base_phenotype
         )
-        root.options = self.options
         root.set_field_aggregator(None)
         self.sections.append(root)
 
@@ -128,7 +127,10 @@ class Mycel:
                 continue
 
             if section.is_tip or self.options.allow_internal_branching:
-                child = section.maybe_branch(self.options.branch_probability, tip_count=tip_count)
+                child = section.maybe_branch(
+                    self.options.branch_probability,
+                    tip_count=tip_count
+                )
                 if child:
                     print(f"    🌿 BRANCHED: {section.end} → {child.orientation}")
                     new_sections.append(child)
