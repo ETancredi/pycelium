@@ -50,27 +50,29 @@ class Phenotype:
         new_pheno.mutated_from_seed = False
 
         for field_name, value in asdict(self).items():
-            # Skip ancestry flags
-            if field_name in ("mutated_from_seed", "mutated_from_parent"):
+            # Skip flags and boolean mutation toggle
+            if field_name in ("mutated_from_seed", "mutated_from_parent", "rgb_mutations_enabled"):
                 continue
 
             if random.random() < self.mutation_prob:
                 # Laplace-distributed mutation
                 delta = np.random.laplace(0.0, mutation_scale)
-                new_value = value
+
                 if isinstance(value, int):
                     new_value = max(0, round(value + delta))
                 elif isinstance(value, float):
                     new_value = max(0.0, value + delta)
                 elif isinstance(value, tuple):
                     # Mutate each channel of color
-                    new_value = tuple(
-                        min(max(c + delta, 0.0), 1.0) for c in value
-                    )
+                    new_value = tuple(min(max(c + delta, 0.0), 1.0) for c in value)
+                else:
+                    # Skip any other types
+                    continue
+
                 setattr(new_pheno, field_name, new_value)
                 new_pheno.mutated_from_parent = True
 
-        # Check against seed phenotype
+        # Track mutation relative to seed phenotype
         if seed_phenotype and new_pheno != seed_phenotype:
             new_pheno.mutated_from_seed = True
 
