@@ -1,46 +1,75 @@
 # gui/sim_gui.py
 
-import tkinter as tk
-from tkinter import ttk, Toplevel, Label, Entry, Button, Listbox, END, SINGLE, filedialog
-from threading import Thread
-import time
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+# Import tkinter GUI toolkit and its themed widgets
+import tkinter as tk  
+from tkinter import (
+    ttk,        # Themed widget set
+    Toplevel,   # Popup windows
+    Label,      # Text display widgets
+    Entry,      # Single-line text input
+    Button,     # Clickable button
+    Listbox,    # List selection widget
+    END,        # Constant for Listbox end index
+    SINGLE,     # Constant for single-selection mode
+    filedialog  # File/cirectory chooser dialogs
+)
 
-from core.options import Options
-from core.point import MPoint
-from main import step_simulation, setup_simulation, generate_outputs
+# Import threading primitives for running simulation in background
+from threading import Thread  
+# Time module for sleep during pause
+import time  
+# Matplotlib for embedding plots in the GUI
+import matplotlib.pyplot as plt  
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  
+# Core simulation setup and stepping functions
+from core.options import Options  
+from core.point import MPoint  
+from main import step_simulation, setup_simulation, generate_outputs  
 
 
 class OptionGUI:
+    """Graphical interface to configure and run the mycelium simulator."""
     def __init__(self):
+        # Create the main application window
         self.root = tk.Tk()
+        # Set window title
         self.root.title("CyberMycelium - Simulator")
-        self.options = Options()
-        self.entries = {}  # will hold StringVar/BooleanVar for every field
 
+        # Instantiate default simulation options
+        self.options = Options()
+        # Dictionary to hold tk.Variable objects for each option field
+        self.entries = {}
+
+        # Thread object for running the simulation
         self.sim_thread = None
+        # State flags for simulation control
         self.running = False
         self.paused = False
+        # Placeholder for the Mycelium model and related components
         self.mycel = None
         self.components = {}
 
-        self.max_steps_var = tk.StringVar(value="100")
-        self.max_tips_var = tk.StringVar(value="1000")
-        self.output_folder = tk.StringVar(value="outputs")
+        # Variables for Run tab inputs
+        self.max_steps_var = tk.StringVar(value="100")   # Max time steps
+        self.max_tips_var = tk.StringVar(value="1000")   # Tip count limit
+        self.output_folder = tk.StringVar(value="outputs")  # Output directory
 
+        # Matplotlib Figure and Axis for 3D plot
         self.fig = plt.Figure(figsize=(5, 5))
         self.ax = self.fig.add_subplot(111, projection="3d")
-        self.canvas = None
+        self.canvas = None  # Will hold the embedding of the Figure in Tk
 
+        # Build all GUI components and start the event loop
         self.build_gui()
         self.root.mainloop()
 
     def build_gui(self):
+        """Construct tabs, input fields, buttons, and plot canvas."""
+        # Create a tabbed notebook widget
         notebook = ttk.Notebook(self.root)
         notebook.pack(fill="both", expand=True)
 
-        # Create each tab
+        # Define frames (tabs) for different option categories
         tabs = {
             "Core": ttk.Frame(notebook),
             "Branching": ttk.Frame(notebook),
@@ -51,31 +80,36 @@ class OptionGUI:
             "RGB_Mutator": ttk.Frame(notebook),
             "Run": ttk.Frame(notebook)
         }
+        # Add each frame to the notebook with its label
         for name, frame in tabs.items():
             notebook.add(frame, text=name)
 
-        # Core tab
+        # CORE TAB 
         core_fields = [
             "growth_rate", "time_step",
             "length_scaled_growth", "length_growth_coef"
         ]
         core_frame = tabs["Core"]
         row = 0
+        # For each core option, create a label + input widget
         for field in core_fields:
             if not hasattr(self.options, field):
-                continue
+                continue  # Skip if Options has no such attribute
             val = getattr(self.options, field)
             ttk.Label(core_frame, text=field).grid(column=0, row=row, sticky="w")
             if isinstance(val, bool):
+                # Boolean options: use a checkbox
                 var = tk.BooleanVar(value=val)
                 ttk.Checkbutton(core_frame, variable=var).grid(column=1, row=row)
             else:
+                # Numeric/string options: use a text entry
                 var = tk.StringVar(value=str(val))
                 ttk.Entry(core_frame, textvariable=var, width=18).grid(column=1, row=row)
+            # Store the variable for later retrieval
             self.entries[field] = var
             row += 1
 
-        # Branching tab
+        # BRANCHING TAB
         branching_fields = [
             "branch_probability", "max_branches", "branch_angle_spread", "field_threshold",
             "branch_time_window", "branch_sensitivity", "optimise_initial_branching", "leading_branch_prob",
@@ -98,7 +132,7 @@ class OptionGUI:
             self.entries[field] = var
             row += 1
 
-        # Tropisms tab
+        # TROPISMS TAB 
         tropism_fields = [
             "autotropism", "gravitropism", "random_walk",
             "gravi_angle_start", "gravi_angle_end", "gravi_angle_max", "gravi_layer_thickness",
@@ -121,7 +155,7 @@ class OptionGUI:
             self.entries[field] = var
             row += 1
 
-        # Density tab
+        # DENSITY TAB
         density_fields = [
             "die_if_old", "die_if_too_dense", "density_field_enabled", "density_threshold",
             "charge_unit_length", "neighbour_radius", "min_supported_tips",
@@ -143,7 +177,7 @@ class OptionGUI:
             self.entries[field] = var
             row += 1
 
-        # Nutrients tab
+        # NUTRIENT TAB
         nutrient_fields = [
             "use_nutrient_field",
             "nutrient_attraction", "nutrient_repulsion",
@@ -164,16 +198,17 @@ class OptionGUI:
                 ttk.Entry(nutrient_frame, textvariable=var, width=18).grid(column=1, row=row)
             self.entries[field] = var
             row += 1
+        # Button to open detailed nutrient editor dialog
+        Button(
+            nutrient_frame,
+            text="Nutrient Editor",
+            command=self.open_nutrient_editor
+        ).grid(column=0, row=row + 1, columnspan=2)
 
-        # “Nutrient Editor” button remains unchanged
-        Button(nutrient_frame, text="🧪 Nutrient Editor",
-               command=self.open_nutrient_editor).grid(column=0, row=row + 1, columnspan=2)
-
-        # Boundary tab
+        # BOUNDARY TAB
         boundary_frame = tabs["Boundary"]
         row = 0
-
-        # volume_constraint checkbox (bool)
+        # Checkbox for enabling volume constraint
         ttk.Label(boundary_frame, text="volume_constraint").grid(column=0, row=row, sticky="w")
         vc_var = tk.BooleanVar(value=self.options.volume_constraint)
         vc_chk = ttk.Checkbutton(boundary_frame, variable=vc_var)
@@ -181,7 +216,7 @@ class OptionGUI:
         self.entries["volume_constraint"] = vc_var
         row += 1
 
-        # x_min, x_max, y_min, y_max, z_min, z_max (float); create them as StringVar so we can parse float later
+        # Entries for x_min, x_max, y_min, y_max, z_min, z_max
         bound_fields = ["x_min", "x_max", "y_min", "y_max", "z_min", "z_max"]
         for coord in bound_fields:
             ttk.Label(boundary_frame, text=coord).grid(column=0, row=row, sticky="w")
@@ -189,110 +224,119 @@ class OptionGUI:
             sv = tk.StringVar(value=str(val))
             entry = ttk.Entry(boundary_frame, textvariable=sv, width=12)
             entry.grid(column=1, row=row)
-            # By default, disable these if volume_constraint is False:
+            # Disable if volume_constraint is unchecked
             if not self.options.volume_constraint:
                 entry.config(state="disabled")
-            # Store (StringVar, Entry widget) so that we can toggle “disabled” on/uncheck:
+            # Store both the StringVar and the Entry widget for toggling later
             self.entries[coord] = (sv, entry)
             row += 1
 
-        # When the user toggles the "volume_constraint" checkbox, enable/disable the six fields:
+        # Function to enable/disable boundary entries when checkbox changes
         def toggle_boundary_fields(*args):
-            enabled = vc_var.get()  # True/False
+            enabled = vc_var.get()
             for coord in bound_fields:
                 sv, ent = self.entries[coord]
-                if enabled:
-                    ent.config(state="normal")
-                else:
-                    ent.config(state="disabled")
+                ent.config(state="normal" if enabled else "disabled")
 
+        # Trace checkbox variable to toggle fields automatically
         vc_var.trace_add("write", toggle_boundary_fields)
-        # Call once to ensure correct initial state:
-        toggle_boundary_fields()
+        toggle_boundary_fields()  # Initialize correct state
 
-        # RGB Mutator
+        # RGB MUTATOR TAB 
         color_frame = tabs["RGB_Mutator"]
         row = 0
-        # RGB‐mutation master toggle
+        # Master toggle for enabling RGB mutations
         tk.Label(color_frame, text="Enable RGB Mutations").grid(column=0, row=row, sticky="w")
         rgb_var = tk.BooleanVar(value=self.options.rgb_mutations_enabled)
         ttk.Checkbutton(color_frame, variable=rgb_var).grid(column=1, row=row)
         self.entries["rgb_mutations_enabled"] = rgb_var
         row += 1
-        # Initial RGB channels
+
+        # Initial RGB channels inputs
         for idx, channel in enumerate(("R", "G", "B")):
             ttk.Label(color_frame, text=f"initial_color_{channel}").grid(column=0, row=row, sticky="w")
             var = tk.StringVar(value=str(self.options.initial_color[idx]))
             ttk.Entry(color_frame, textvariable=var, width=10).grid(column=1, row=row)
             self.entries[f"initial_color_{channel.lower()}"] = var
             row += 1
-        # Mutation probability
+
+        # Color mutation probability input
         ttk.Label(color_frame, text="color_mutation_prob").grid(column=0, row=row, sticky="w")
         prob_var = tk.StringVar(value=str(self.options.color_mutation_prob))
         ttk.Entry(color_frame, textvariable=prob_var, width=10).grid(column=1, row=row)
         self.entries["color_mutation_prob"] = prob_var
         row += 1
-        # Mutation scale (Laplace b)
+
+        # Color mutation scale input
         ttk.Label(color_frame, text="color_mutation_scale").grid(column=0, row=row, sticky="w")
         scale_var = tk.StringVar(value=str(self.options.color_mutation_scale))
         ttk.Entry(color_frame, textvariable=scale_var, width=10).grid(column=1, row=row)
         self.entries["color_mutation_scale"] = scale_var
 
-        # Run tab
+        # RUN TAB 
         run_frame = tabs["Run"]
+        # Max Steps label and entry
         ttk.Label(run_frame, text="Max Steps").grid(column=0, row=0, sticky="e")
         ttk.Entry(run_frame, textvariable=self.max_steps_var, width=10).grid(column=1, row=0)
+        # Max Tips label and entry
         ttk.Label(run_frame, text="Max Tips").grid(column=0, row=1, sticky="e")
         ttk.Entry(run_frame, textvariable=self.max_tips_var, width=10).grid(column=1, row=1)
-
+        # Output Folder label, entry, and Browse button
         ttk.Label(run_frame, text="Output Folder").grid(column=0, row=2, sticky="e")
         ttk.Entry(run_frame, textvariable=self.output_folder, width=20).grid(column=1, row=2)
         ttk.Button(run_frame, text="Browse", command=self.browse_folder).grid(column=2, row=2, padx=5)
 
+        # Start and Pause/Resume buttons
         ttk.Button(run_frame, text="Start Simulation", command=self.start_sim).grid(column=0, row=3, columnspan=2, pady=8)
         ttk.Button(run_frame, text="Pause / Resume", command=self.toggle_pause).grid(column=0, row=4, columnspan=2)
 
+        # Label to display metrics (step, tips, biomass)
         self.metrics_label = ttk.Label(run_frame, text="Step: 0 | Tips: 0 | Biomass: 0")
         self.metrics_label.grid(column=0, row=5, columnspan=2, pady=5)
 
+        # Embed the Matplotlib Figure into the Tkinter GUI
         self.canvas = FigureCanvasTkAgg(self.fig, master=run_frame)
         self.canvas.get_tk_widget().grid(row=0, column=3, rowspan=8, padx=20, pady=10)
 
     def browse_folder(self):
+        """Open folder chooser dialog and set the output_folder variable."""
         folder = filedialog.askdirectory()
         if folder:
             self.output_folder.set(folder)
 
     def get_options(self):
         """
-        Called right before starting the sim.  We must unwrap each variable
-        stored in self.entries[...] and copy it into self.options.
+        Read current values from all entry widgets and update self.options accordingly.
+        Returns:
+            Options: populated Options dataclass.
         """
-        # Don’t parse the RGB/mutation entries here—handle them below
+        # RGB-related keys handled separately later
         color_keys = {
             "rgb_mutations_enabled", "initial_color_r", "initial_color_g", "initial_color_b",
             "color_mutation_prob", "color_mutation_scale"
         }
+
+        # Iterate over all stored entry variables
         for key, var in self.entries.items():
             if key in color_keys:
-                continue
-            # volume_constraint → BooleanVar
+                continue  # Skip RGB fields here
+
+            # volume_constraint is BooleanVar
             if key == "volume_constraint":
                 self.options.volume_constraint = var.get()
                 continue
 
-            # For each boundary field (x_min, x_max, y_min, y_max, z_min, z_max); var is a tuple (StringVar, Entry widget).
+            # Boundary fields: var is (StringVar, Entry widget)
             if key in ("x_min", "x_max", "y_min", "y_max", "z_min", "z_max"):
                 str_var, entry_widget = var
                 try:
                     val = float(str_var.get())
                     setattr(self.options, key, val)
                 except ValueError:
-                    # if parsing fails, leave the old default in place
-                    pass
+                    pass  # Leave default if parse fails
                 continue
 
-            # Otherwise, the old logic for Core/Branching/Tropism/Density/Nutrient
+            # Other fields: parse based on current type
             current_val = getattr(self.options, key)
             try:
                 if isinstance(current_val, bool):
@@ -307,33 +351,28 @@ class OptionGUI:
                 parsed = current_val
             setattr(self.options, key, parsed)
 
-            # Parsing color options
-            try:
-                # Master toggle
-                self.options.rgb_mutations_enabled = self.entries["rgb_mutations_enabled"].get()
-    
-                # Initial color channels
-                r = float(self.entries["initial_color_r"].get())
-                g = float(self.entries["initial_color_g"].get())
-                b = float(self.entries["initial_color_b"].get())
-                self.options.initial_color = (r, g, b)
-    
-                # Mutation settings
-                self.options.color_mutation_prob = float(
-                    self.entries["color_mutation_prob"].get()
-                )
-                self.options.color_mutation_scale = float(
-                    self.entries["color_mutation_scale"].get()
-                )
-            except (KeyError, ValueError):
-                print("⚠️ Invalid RGB/mutation parameters; using defaults.")
+        # Now parse RGB/mutation entries
+        try:
+            self.options.rgb_mutations_enabled = self.entries["rgb_mutations_enabled"].get()
+            r = float(self.entries["initial_color_r"].get())
+            g = float(self.entries["initial_color_g"].get())
+            b = float(self.entries["initial_color_b"].get())
+            self.options.initial_color = (r, g, b)
+            self.options.color_mutation_prob = float(self.entries["color_mutation_prob"].get())
+            self.options.color_mutation_scale = float(self.entries["color_mutation_scale"].get())
+        except (KeyError, ValueError):
+            print("⚠️ Invalid RGB/mutation parameters; using defaults.")
 
-            return self.options
+        return self.options
 
     def open_nutrient_editor(self):
+        """
+        Popup window allowing addition/removal of multiple nutrient attractors and repellents.
+        """
         top = Toplevel(self.root)
         top.title("Nutrient Source Manager")
 
+        # Labels and Listboxes for attractors and repellents
         Label(top, text="Nutrient Attractors").grid(row=0, column=0, columnspan=4)
         attr_listbox = Listbox(top, height=5, selectmode=SINGLE)
         attr_listbox.grid(row=1, column=0, columnspan=4, padx=5, pady=2, sticky="we")
@@ -342,6 +381,7 @@ class OptionGUI:
         rep_listbox = Listbox(top, height=5, selectmode=SINGLE)
         rep_listbox.grid(row=7, column=0, columnspan=4, padx=5, pady=2, sticky="we")
 
+        # Inputs for new source coordinates and strength
         Label(top, text="X").grid(row=11, column=0)
         Label(top, text="Y").grid(row=11, column=1)
         Label(top, text="Z").grid(row=11, column=2)
@@ -356,10 +396,12 @@ class OptionGUI:
         entry_z.grid(row=12, column=2)
         entry_s.grid(row=12, column=3)
 
+        # Local copies of the options lists for editing
         attractors = self.options.nutrient_attractors[:]
         repellents = self.options.nutrient_repellents[:]
 
         def refresh_lists():
+            """Update Listbox displays from attractors/repellents lists."""
             attr_listbox.delete(0, END)
             rep_listbox.delete(0, END)
             for pos, strength in attractors:
@@ -368,6 +410,7 @@ class OptionGUI:
                 rep_listbox.insert(END, f"{pos} : {strength}")
 
         def add_entry(to_attr):
+            """Add new entry from text fields to attractors or repellents."""
             try:
                 x, y, z = float(entry_x.get()), float(entry_y.get()), float(entry_z.get())
                 s = float(entry_s.get())
@@ -377,6 +420,7 @@ class OptionGUI:
                 print("⚠️ Invalid entry")
 
         def remove_entry(from_attr):
+            """Remove selected entry from attractors or repellents."""
             lb = attr_listbox if from_attr else rep_listbox
             sel = lb.curselection()
             if sel:
@@ -387,64 +431,98 @@ class OptionGUI:
                     del repellents[idx]
                 refresh_lists()
 
+        # Buttons to add/remove entries
         Button(top, text="Add to Attractors", command=lambda: add_entry(True)).grid(row=13, column=0, columnspan=2)
         Button(top, text="Add to Repellents", command=lambda: add_entry(False)).grid(row=13, column=2, columnspan=2)
         Button(top, text="Remove Attractor", command=lambda: remove_entry(True)).grid(row=14, column=0, columnspan=2)
         Button(top, text="Remove Repellent", command=lambda: remove_entry(False)).grid(row=14, column=2, columnspan=2)
 
         def apply_and_close():
+            """Commit local edits back to self.options and close dialog."""
             self.options.nutrient_attractors = attractors
             self.options.nutrient_repellents = repellents
             top.destroy()
 
         Button(top, text="✅ Apply & Close", command=apply_and_close).grid(row=15, column=0, columnspan=4, pady=5)
-        refresh_lists()
+        refresh_lists()  # Initial population of listboxes
 
     def update_metrics_display(self, step):
+        """
+        Update the Step/Tips/Biomass label in the Run tab.
+        Args:
+            step (int): current simulation step.
+        """
         tips = len(self.mycel.get_tips())
         if hasattr(self.mycel, "biomass_history") and self.mycel.biomass_history:
             biomass = self.mycel.biomass_history[-1]
         else:
             biomass = 0.0
+        # Set new text on the metrics_label widget
         self.metrics_label.config(
             text=f"Step: {step} | Tips: {tips} | Biomass: {biomass:.2f}"
         )
 
     def draw_3d_mycelium(self):
+        """Redraw the entire mycelium network in the embedded 3D plot."""
         self.ax.clear()
         self.ax.set_title("3D Mycelium Growth")
         self.ax.set_xlabel("X")
         self.ax.set_ylabel("Y")
         self.ax.set_zlabel("Z")
         for section in self.mycel.get_all_segments():
-            xs, ys, zs = zip(section.start.as_array(), section.end.as_array())
+            # Extract start/end coordinates for plotting a line
+            xs = [section.start.coords[0], section.end.coords[0]]
+            ys = [section.start.coords[1], section.end.coords[1]]
+            zs = [section.start.coords[2], section.end.coords[2]]
             self.ax.plot(xs, ys, zs, linewidth=1.0)
+        # Refresh the canvas to show updates
         self.canvas.draw()
 
     def start_sim(self):
+        """
+        Callback for Start Simulation button.
+        Reads options, sets up simulation, and spawns simulation thread.
+        """
         if self.sim_thread and self.sim_thread.is_alive():
             print("Simulation already running.")
             return
+        # Read GUI inputs into self.options
         opts = self.get_options()
+        # Initialize simulation model and components
         self.mycel, self.components = setup_simulation(opts)
         self.running = True
         self.paused = False
+        # Start background thread for simulation loop
         self.sim_thread = Thread(target=self.run_simulation_loop, daemon=True)
         self.sim_thread.start()
 
     def toggle_pause(self):
+        """
+        Callback for Pause/Resume button.
+        Toggles paused flag; when pausing, trigger immediate output generation.
+        """
         if not self.running:
             return
         self.paused = not self.paused
         if self.paused:
             print("⏸️ Paused")
+            # Generate outputs once when paused
             self.root.after_idle(
-                lambda: generate_outputs(self.mycel, self.components, output_dir=self.output_folder.get())
+                lambda: generate_outputs(
+                    self.mycel,
+                    self.components,
+                    output_dir=self.output_folder.get()
+                )
             )
         else:
             print("▶️ Resuming")
 
     def run_simulation_loop(self):
+        """
+        Main simulation loop running in a separate thread.
+        Advances simulation step-by-step, updates GUI, and handles termination.
+        """
+        # Parse max_steps and max_tips from StringVars
         try:
             max_steps = int(self.max_steps_var.get())
         except ValueError:
@@ -454,27 +532,41 @@ class OptionGUI:
         except ValueError:
             max_tips = 1000
 
+        # Loop for each simulation step
         for step in range(max_steps):
+            # If paused, sleep briefly until unpaused
             while self.paused:
                 time.sleep(0.2)
 
+            # Advance one step of the simulation
             step_simulation(self.mycel, self.components, step)
+            # Update metrics label
             self.update_metrics_display(step)
 
+            # Redraw the 3D plot every 3 steps
             if step % 3 == 0:
                 self.draw_3d_mycelium()
 
+            # Stop if tip count limit reached
             if len(self.mycel.get_tips()) >= max_tips:
                 print(f"🛑 Max tips reached: {max_tips}")
                 break
 
+        # Mark as not running when loop ends
         self.running = False
         print("✅ Simulation complete")
+        # Generate final outputs once on main thread
         self.root.after_idle(
-            lambda: generate_outputs(self.mycel, self.components, output_dir=self.output_folder.get())
+            lambda: generate_outputs(
+                self.mycel,
+                self.components,
+                output_dir=self.output_folder.get()
+            )
         )
+        # Final plot redraw
         self.draw_3d_mycelium()
 
 
+# If this script is run directly, launch the GUI
 if __name__ == "__main__":
     OptionGUI()
