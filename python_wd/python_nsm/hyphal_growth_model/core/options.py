@@ -73,32 +73,32 @@ class Options:
     nutrient_repellents: list = field(default_factory=lambda: [((-20, -20, 0), -1.0)])
       
     # GUI-friendly default single field (with user inputs)
-    nutrient_attraction: float = 0.0                 
-    nutrient_repulsion: float = 0.0                  
-    nutrient_attract_pos: str = "30,30,0"            
-    nutrient_repel_pos: str = "-20,-20,0"            
-    nutrient_radius: float = 50.0                    
-    nutrient_decay: float = 0.05                     
+    nutrient_attraction: float = 0.0 # Global uniform attraction strength toward nutrient                
+    nutrient_repulsion: float = 0.0 # Global uniform repulsion strength from nutrient                 
+    nutrient_attract_pos: str = "30,30,0" # Comma-separated string specifying attractor coordinates            
+    nutrient_repel_pos: str = "-20,-20,0" # Comma-separated string specifying repellent coordinates           
+    nutrient_radius: float = 50.0 # Distance over which nutrient sources/repellents act                    
+    nutrient_decay: float = 0.05 # Exponential decay rate of nutrient concentration with distance                    
 
     # Anisotropy
-    anisotropy_enabled: bool = False
-    anisotropy_vector: tuple = (1.0, 0.0, 0.0)  
-    anisotropy_strength: float = 0.1            
+    anisotropy_enabled: bool = False # If True, apply a fixed directional bias
+    anisotropy_vector: tuple = (1.0, 0.0, 0.0) # Unit vector specifying direction of anisotropy 
+    anisotropy_strength: float = 0.1 # Magnitude of the anisotropic bias            
 
     # Volume Constraint
-    volume_constraint: bool = False
-    x_min: float = -10.0
-    x_max: float = 10.0
+    volume_constraint: bool = False # If True, segments outside the specific box are pruned
+    x_min: float = -10.0 
+    x_max: float = 10.0 
     y_min: float = -10.0
     y_max: float = 10.0
     z_min: float = -10.0
     z_max: float = 10.0
 
     # RGB Mutation Settings
-    rgb_mutations_enabled: bool = False
-    initial_color: Tuple[float, float, float] = (0.5, 0.5, 0.5)
+    rgb_mutations_enabled: bool = False # If True, daughter segments may randomly change colour
+    initial_color: Tuple[float, float, float] = (0.5, 0.5, 0.5) # Default RGB colour assigned to new segments
     color_mutation_prob: float = 0.05       # chance each daughter mutates
-    color_mutation_scale: float = 0.02      # Laplace “b” parameter
+    color_mutation_scale: float = 0.02      # Laplace “b” parameter for distribution of colour changes
     
     # Reproducibility
-    seed: int = 123
+    seed: int = 123 # Fixed seed for reproducible simulation runs
