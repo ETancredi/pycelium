@@ -1,37 +1,39 @@
 # core/options.py
 
-from dataclasses import dataclass, field
-from typing import List, Tuple
+# Imports
+from dataclasses import dataclass, field # Dataclass decorator and field factory function for default mutable fields
+from typing import List, Tuple # Import list and Tuple for tupe annotations of parameters
 
 @dataclass
 class Options:
+    """Configuration container for all simulation parameters."""
     
-    # Core simulation parameters
-    growth_rate: float = 1.0
-    time_step: float = 1.0
+    # Core simulation timing
+    growth_rate: float = 1.0 # How quickly each hyphal segment increases per unit time
+    time_step: float = 1.0 # Size of each discrete simulation step (Δt)
 
     # Branching behaviour
-    branch_probability: float = 0.4                 
-    max_branches: int = 8                           
-    branch_angle_spread: float = 180.0              
-    field_threshold: float = 0.06                   
-    branch_time_window: float = 40.0
-    branch_sensitivity: float = 1.0
-    optimise_initial_branching: bool = True
-    leading_branch_prob: float = 0.0
-    allow_internal_branching: bool = True           
+    branch_probability: float = 0.4 # Probability that a tip will attempt to branch in a single time step                 
+    max_branches: int = 8 # Max. no. simultaneous branches allowed per segment                          
+    branch_angle_spread: float = 180.0 # Max. angular deviation (in degrees) from parent orientation for new branches              
+    field_threshold: float = 0.06 # Minimum substrate / chemical field strength required to allow branching                  
+    branch_time_window: float = 40.0 # Time window (age) during which branching is permitted for a segment
+    branch_sensitivity: float = 1.0 # Scaling factor applied to field influences when deciding to branch
+    optimise_initial_branching: bool = True # If True, uses a heuristic to favour early branching for root establishment
+    leading_branch_prob: float = 0.0 # Extra probability boost assigned to the first branch of each tip
+    allow_internal_branching: bool = True # If True, non-tip segments can also form new branches           
 
-    # Tropisms
-    autotropism: float = 1.0
-    gravitropism: float = 0.0
-    random_walk: float = 0.4
-    length_scaled_growth: bool = True
-    length_growth_coef: float = 0.1
-    curvature_branch_bias: float = 0.25 
+    # Tropisms and Growth Modifiers
+    autotropism: float = 1.0 # Strength of self-alignment: tendency to continue in current direction
+    gravitropism: float = 0.0 # Strength of gravity driven curvature (positive values bend downward)
+    random_walk: float = 0.4 # Magnitude of stochastic perturbation added to growth direction
+    length_scaled_growth: bool = True # If True, growth_rate is scaled by segment length
+    length_growth_coef: float = 0.1 # Coefficient for length-based growth scaling
+    curvature_branch_bias: float = 0.25  # Bias factor: move curved segments are more likely to branch
     
     # Directional memory (EMA decay)
-    direction_memory_blend: float = 0.1
-    field_alignment_boost: float = 0.2  
+    direction_memory_blend: float = 0.1 # Exponential moving avg. blend factor for past direction vs. new influences
+    field_alignment_boost: float = 0.2 # Weight given to aligning with external chemical/substrate fields 
     field_curvature_influence: float = 0.2
 
     # Age & Length limitations
