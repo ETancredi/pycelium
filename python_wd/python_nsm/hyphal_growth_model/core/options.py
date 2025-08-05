@@ -34,39 +34,39 @@ class Options:
     # Directional memory (EMA decay)
     direction_memory_blend: float = 0.1 # Exponential moving avg. blend factor for past direction vs. new influences
     field_alignment_boost: float = 0.2 # Weight given to aligning with external chemical/substrate fields 
-    field_curvature_influence: float = 0.2
+    field_curvature_influence: float = 0.2 # Degree to which local field curvature steers the growth direction
 
     # Age & Length limitations
-    max_length: float = 50.0            
-    die_if_old: bool = False
-    max_age: float = 300.0              
-    min_tip_age: float = 10.0
-    min_tip_length: float = 10.0
-    die_if_too_dense: bool = True
-    min_supported_tips: int = 16
-    max_supported_tips: int = 1000      
+    max_length: float = 50.0 # If segment length exceeds this, it dies            
+    die_if_old: bool = False # If True, segments older than max_age die
+    max_age: float = 300.0 # Max. age (in sim time units) before age-based death              
+    min_tip_age: float = 10.0 # Min. age before a tip is allowed to branch
+    min_tip_length: float = 10.0 # Min. length before a tip is allowed to branch
+    die_if_too_dense: bool = True # If True, segments in overly dense regions )based on density field) are killed
+    min_supported_tips: int = 16 # Min. no. neighbouring tips required for survival
+    max_supported_tips: int = 1000 # Max. total active tips allowed before pruning occurs      
 
     # Density field
-    density_field_enabled: bool = True
-    density_threshold: float = 0.2
-    charge_unit_length: float = 20.0
-    neighbour_radius: float = 400.0
-    density_from_tips: bool = True
-    density_from_branches: bool = True
-    density_from_all: bool = True       
+    density_field_enabled: bool = True # Toggle for computing a crowding field from all sources
+    density_threshold: float = 0.2 # Field value above which sgements are considered too dense
+    charge_unit_length: float = 20.0 # Scaling factor for how much "charge" each segment contributed to the field
+    neighbour_radius: float = 400.0 # Radius (distance) w/in which other tips count towards density
+    density_from_tips: bool = True # Include tip contributions in the density field
+    density_from_branches: bool = True # Include branch (non-tip segment) contributions
+    density_from_all: bool = True # Include all segments when computing density       
 
     # Gravitropism curvature (angle-based)
-    gravi_angle_start: float = 100.0
-    gravi_angle_end: float = 500.0
-    gravi_angle_max: float = 180.0
-    gravi_layer_thickness: float = 40.0
+    gravi_angle_start: float = 100.0 # Min. angle (degrees) at which gravity begins to influence curvature
+    gravi_angle_end: float = 500.0 # Angle above which maximum gravitropic curvature is applied
+    gravi_angle_max: float = 180.0 # Max. curvature angle change allowed per step
+    gravi_layer_thickness: float = 40.0 # Thickness of layers used to modulate gravitropic response
 
-    # Data & debugging
-    record_dead_tips: bool = True
-    source_config_path: str = ""
+    # Data recording & debugging
+    record_dead_tips: bool = True # If True, positions of dead tips are still recorded
+    source_config_path: str = "" # Optional path ot YAML/JSON file for external parameter loading
 
     # Nutrient field settings
-    use_nutrient_field: bool = False
+    use_nutrient_field: bool = False # Enable conputation of a separate nutrient concentration field
       
     # Legacy-style attractors/repellents (for advanced use or CLI setup)
     nutrient_attractors: list = field(default_factory=lambda: [((30, 30, 0), 1.0)])  # (pos3D, strength)
