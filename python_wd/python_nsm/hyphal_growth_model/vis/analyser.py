@@ -1,5 +1,6 @@
 # vis/analyser.py
 
+# Imports
 import matplotlib.pyplot as plt
 from core.mycel import Mycel
 from dataclasses import dataclass, field
