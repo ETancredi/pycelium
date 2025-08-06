@@ -1,6 +1,7 @@
 # vis/animate_growth.py
 
-import pandas as pd
+# Imports
+import pandas as pd # reading CSV time-series data
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation
