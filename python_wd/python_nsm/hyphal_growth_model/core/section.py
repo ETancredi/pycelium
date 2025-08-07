@@ -171,7 +171,7 @@ class Section:
         # Only active tips can branch
         if not self.is_tip or self.is_dead:
             return None
-        #Respect maximum branches per segment
+        # Respect maximum branches per segment
         if self.branches_made >= self.options.max_branches:
             return None
         # Enforce minimum age and length before branching
