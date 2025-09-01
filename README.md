@@ -173,7 +173,7 @@ Each simulation produces a variety of artifacts saved in the `outputs/` or `batc
 
 Developed by Edoardo Tancredi and Contributors:
 
-Michael J. Bottery, Michael J. Bromley, Christopher G. Knight, Ian Hall
+Michael J. Bromley, Christopher G. Knight, Ian Hall, Michael J. Bottery
 
 Original model based on the Neighbour-Sensing Model of Hyphal Growth doi.org/10.1017/S0953756204001261
 
