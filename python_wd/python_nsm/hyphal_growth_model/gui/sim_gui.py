@@ -13,6 +13,9 @@ from tkinter import (
     SINGLE,     # Constant for single-selection mode
     filedialog  # File/cirectory chooser dialogs
 )
+import os
+import random
+import numpy as np # Imports for new unified seed
 
 # Import threading primitives for running simulation in background
 from threading import Thread  
@@ -24,7 +27,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 # Core simulation setup and stepping functions
 from core.options import Options  
 from core.point import MPoint  
-from main import step_simulation, setup_simulation, generate_outputs  
+from main import step_simulation, setup_simulation, generate_outputs 
+from io_utils.run_paths import resolve_seed, compute_run_dir # Per-run folder helpers
 
 
 class OptionGUI:
@@ -53,6 +57,9 @@ class OptionGUI:
         self.max_steps_var = tk.StringVar(value="100")   # Max time steps
         self.max_tips_var = tk.StringVar(value="1000")   # Tip count limit
         self.output_folder = tk.StringVar(value="outputs")  # Output directory
+
+        # Remember the computed per-run directory for this session
+        self.current_run_dir = None
 
         # Matplotlib Figure and Axis for 3D plot
         self.fig = plt.Figure(figsize=(5, 5))
@@ -488,7 +495,21 @@ class OptionGUI:
             return
         # Read GUI inputs into self.options
         opts = self.get_options()
-        # Initialize simulation model and components
+
+        # Resolve seed, set RNGs, compute per-run output folder
+        seed = resolve_seed(getattr(opts, "seed", None))
+        opts.seed = seed
+        random.seed(seed)
+        np.random.seed(seed)
+
+        # Create run directory under chosen output root (GUI field)
+        run_dir = compute_run_dir(self.output_folder.get(), seed)
+        self.current_run_dir = run_dir
+        # Inform downstream (main.py) to write all artefacts here
+        os.environ["BATCH_OUTPUT_DIR"] = str(run_dir)
+        print(f"📂 GUI run directory: {run_dir} (seed={seed})")
+        
+        # Initialise simulation model and components
         self.mycel, self.components = setup_simulation(opts)
         self.running = True
         self.paused = False
@@ -506,12 +527,13 @@ class OptionGUI:
         self.paused = not self.paused
         if self.paused:
             print("⏸️ Paused")
-            # Generate outputs once when paused
+            # Generate outputs once when paused (write into current_run_dir)
+            target_dir = str(self.current_run_dir or self.output_folder.get())
             self.root.after_idle(
                 lambda: generate_outputs(
                     self.mycel,
                     self.components,
-                    output_dir=self.output_folder.get()
+                    output_dir=target_dir
                 )
             )
         else:
@@ -556,16 +578,16 @@ class OptionGUI:
         self.running = False
         print("✅ Simulation complete")
         # Generate final outputs once on main thread
+        target_dir = str(self.current_run_dir or self.output_folder.get())
         self.root.after_idle(
             lambda: generate_outputs(
                 self.mycel,
                 self.components,
-                output_dir=self.output_folder.get()
+                output_dir=target_dir
             )
         )
         # Final plot redraw
         self.draw_3d_mycelium()
-
 
 # If this script is run directly, launch the GUI
 if __name__ == "__main__":
