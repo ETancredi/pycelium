@@ -62,7 +62,7 @@ def animate_growth(csv_path="outputs/mycelium_time_series.csv", save_path="outpu
         try:
             ani.save(fallback, writer="pillow", dpi=100)
             logger.info(f" Fallback GIF saved to {fallback}")
-        except: Exception as e2:
+        except Exception as e2:
             logger.error(f"Failed to save fallback GIF: {e2}")
     plt.close() # close figure to release memory
 
