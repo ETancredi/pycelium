@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt # Plotting
 from mpl_toolkits.mplot3d import Axes3D # 3D plotting via mpl_toolkits
 from matplotlib.animation import FuncAnimation # Creating animations
 import os # Path manipulations
+import logging
+logger = logging.getLogger("pycelium")
 
 def animate_growth(csv_path="outputs/mycelium_time_series.csv", save_path="outputs/mycelium_growth.mp4", interval=100):
     """
@@ -53,13 +55,15 @@ def animate_growth(csv_path="outputs/mycelium_time_series.csv", save_path="outpu
 
     try:
         ani.save(save_path, writer="ffmpeg", dpi=150) # Save as MP4 using ffmpeg
-        print(f"🎥 Saved animation to {save_path}")
+        logger.info(f"Animation saved: {save_path}")
     except Exception as e:
-        print(f"⚠️ Failed to save MP4: {e}") # on failure (e.g. ffmpeg not installed, fallback to GIF)
+        logger.warning(f"Failed to save MP4 with ffmpeg; falling back to GIF. Error: {e}") # on failure (e.g. ffmpeg not installed, fallback to GIF)
         fallback = save_path.replace(".mp4", ".gif")
-        ani.save(fallback, writer="pillow", dpi=100)
-        print(f"🎞️ Fallback GIF saved to {fallback}")
-
+        try:
+            ani.save(fallback, writer="pillow", dpi=100)
+            logger.info(f" Fallback GIF saved to {fallback}")
+        except: Exception as e2:
+            logger.error(f"Failed to save fallback GIF: {e2}")
     plt.close() # close figure to release memory
 
 if __name__ == "__main__":
