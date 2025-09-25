@@ -26,6 +26,8 @@ from io_utils.checkpoint import CheckpointSaver
 from io_utils.autostop import AutoStop
 from io_utils.grid_export import export_grid_to_csv, export_grid_to_png
 from io_utils.exporter import export_to_csv, export_to_obj, export_tip_history, export_biomass_history
+from io_utils.logging_utils import setup_logging, parse_int_env
+logger = setup_logging("pycelium")  # default WARNING; override with PYCELIUM_LOG_LEVEL
 
 # Runtime control and mutation of params
 from control.runtime_mutator import RuntimeMutator
@@ -60,12 +62,11 @@ def setup_simulation(opts):
         Mycel, components_dict
     """
     # Set random seed for reproducibility
-    if hasattr(opts, "seed"):
-        print(f"🌱 Setting random seed: {opts.seed}")
-        random.seed(opts.seed)
-        np.random.seed(opts.seed)
+    if hasattr(opts, "seed") and opts.seed is not None:
+        logger.info(f"Seed: {opts.seed}")
+        random.seed(opts.seed); np.random.seed(opts.seed)
     else:
-        print("🌱 No seed specified; using system randomness.")
+        logger.info("Seed: <random or external>")
 
     # Instantiate main simulation engine
     mycel = Mycel(opts)
@@ -120,7 +121,7 @@ def setup_simulation(opts):
 
     # Determine output directory from environment (batch or default)
     output_dir = os.getenv("BATCH_OUTPUT_DIR", "outputs") 
-    print(f"🔍 BATCH_OUTPUT_DIR is: {output_dir}")
+    logger.info(f"Output dir: {output_dir}")
     
     # Set up checkpoint saver to write JSON every N steps
     checkpoints_folder = os.path.join(output_dir, "checkpoints")
