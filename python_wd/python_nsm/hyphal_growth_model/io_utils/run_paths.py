@@ -97,4 +97,8 @@ def compute_run_dir(
     """
     outputs_root = Path(outputs_root)
     ymd = _utc_yyyymmdd()
-    jid = job_id if job_id is n
+    jid = job_id if job_id is not None else _next_job_id(outputs_root)
+    jid_str = f"{jid:0{zero_pad}d}" if zero_pad else str(jid)
+    run_dir = outputs_root / f"{ymd}_{jid_str}_{seed}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
