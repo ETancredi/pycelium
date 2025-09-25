@@ -213,7 +213,7 @@ class Section:
                     .add(curve.copy().scale(self.options.curvature_branch_bias))
                     .normalise()
                 )
-                logger.debug(f"Curvature blended into branch direction: strength=%s", curv_strength)
+                logger.debug("Curvature blended into branch direction: strength=%s", locals().get("curv_strength", locals().get("field_strength", "n/a")))
 
             # Directional memory-based bias
             if self.options.direction_memory_blend > 0:
@@ -222,7 +222,7 @@ class Section:
                     .add(self.direction_memory.copy().scale(self.options.direction_memory_blend))
                     .normalise()
                 )
-                logger.debug(f"Directional memory blended into branch orientation: alpha=%s", alpha)
+                logger.debug("Directional memory blended into branch orientation: alpha=%s", locals().get("alpha", "n/a"))
 
             # Decide which branch retains "leading" growth (split vs. continue)
             keep_self_leading = np.random.rand() < self.options.leading_branch_prob
