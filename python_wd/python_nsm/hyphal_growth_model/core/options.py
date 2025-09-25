@@ -2,7 +2,7 @@
 
 # Imports
 from dataclasses import dataclass, field # Dataclass decorator and field factory function for default mutable fields
-from typing import List, Tuple # Import list and Tuple for tupe annotations of parameters
+from typing import List, Tuple, Optional # Import list and Tuple for tupe annotations of parameters, import optional for setting seed
 
 @dataclass
 class Options:
@@ -101,4 +101,4 @@ class Options:
     color_mutation_scale: float = 0.02      # Laplace “b” parameter for distribution of colour changes
     
     # Reproducibility
-    seed: int = 123 # Fixed seed for reproducible simulation runs
+    seed: Optional[int] = None # Fixed seed for reproducible simulation runs, but made optional so we can omit if we want multiple reps
