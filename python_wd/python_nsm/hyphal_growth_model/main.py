@@ -283,13 +283,11 @@ def simulate(opts, steps=120):
         # Allow user to interrupt simulation with Ctrl+C and still save results
         print("\n🛑 Interrupted by user. Saving final state...")
 
-    # Determine final output folder: batch vs standalone
-    if any("batch_runner.py" in arg for arg in sys.argv):
-        # If running from batch_runner.py → place outputs in the batch_outputs folder
-        output_dir = os.getenv("BATCH_OUTPUT_DIR", "outputs")
-    else:
-        output_dir = "outputs"
-
+    # Determine final output folder:
+    # Always prefer BATCH_OUTPUT_DIR if set (batch, CLI, or GUI),
+    # otherwise fall back to plain "outputs".
+    output_dir = os.getenv("BATCH_OUTPUT_DIR", "outputs")
+    
     print(f"📂 Saving outputs to: {output_dir}")
     generate_outputs(mycel, components, output_dir=output_dir) # Generate all plots and exports
 
