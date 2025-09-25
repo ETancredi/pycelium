@@ -5,6 +5,8 @@ import numpy as np # Array saving and numerical operations
 import matplotlib.pyplot as plt # Image export functionality
 from vis.density_map import DensityGrid # Defining grid structure
 import os # File path checks and creation
+import logging
+logger = logging.getLogger("pycelium")
 
 def export_grid_to_csv(grid: DensityGrid, filename: str):
     """
