@@ -3,6 +3,8 @@
 # Imports
 import plotly.graph_objs as go # 3D interactive plots
 import os # Filesystem os
+import logging
+logger = logging.getLogger("pycelium")
 from core.mycel import Mycel # Mycel class for sim data
 
 def plot_mycel_3d_interactive(mycel: Mycel, save_path="outputs/mycelium_3d_interactive.html"):
@@ -43,4 +45,4 @@ def plot_mycel_3d_interactive(mycel: Mycel, save_path="outputs/mycelium_3d_inter
 
     os.makedirs(os.path.dirname(save_path), exist_ok=True) # Ensure output directory exists before writing file
     fig.write_html(save_path) # Write interactive HTML file
-    print(f"🌐 Interactive 3D plot saved to: {save_path}")
+    logger.info("Interactive 3D plot saved: {save_path}")
