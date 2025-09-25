@@ -4,6 +4,8 @@
 import numpy as np # Numpy for random draws and vector math
 import random # Python random for stochastic operations
 import itertools # Creats a global unique ID generator
+import logging # for silencing prints and converting to debug logs
+logger = logging.getLogger("pycelium.core.section")
 from core.point import MPoint # 3D point/vector class 
 from core.options import Options # Simulation params container
 from typing import Optional, Tuple # Optional and Tuple for type hints
@@ -211,7 +213,7 @@ class Section:
                     .add(curve.copy().scale(self.options.curvature_branch_bias))
                     .normalise()
                 )
-                print(f"🌀 Curvature blended into branch direction: strength={self.options.curvature_branch_bias:.2f}")
+                logger.debug(f"Curvature blended into branch direction: strength=%s", curv_strength)
 
             # Directional memory-based bias
             if self.options.direction_memory_blend > 0:
@@ -220,7 +222,7 @@ class Section:
                     .add(self.direction_memory.copy().scale(self.options.direction_memory_blend))
                     .normalise()
                 )
-                print(f"🧠 Directional memory blended into branch orientation: alpha={self.options.direction_memory_blend:.2f}")
+                logger.debug(f"Directional memory blended into branch orientation: alpha=%s", alpha)
 
             # Decide which branch retains "leading" growth (split vs. continue)
             keep_self_leading = np.random.rand() < self.options.leading_branch_prob
