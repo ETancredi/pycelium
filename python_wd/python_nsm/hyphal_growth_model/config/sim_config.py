@@ -39,8 +39,8 @@ def load_options_from_cli() -> Options:
 
     # If a config file path was provided, load options from it
     if args.config:
-        opts = load_options_from_json(args.config)
+        opts = load_options_from_json(args.config) # Respects JSON if present
     else:
         opts = Options()  # Otherwise, use default Opts values
-
+        opts.seed = None # ensure random seed if JSON does not provide a seed
     return opts, args.steps # Return both Options instance and parsed steps value

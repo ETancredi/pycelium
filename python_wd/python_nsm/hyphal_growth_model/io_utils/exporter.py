@@ -1,8 +1,11 @@
 # io_utils/exporter.py
 
 # Imports
-from core.mycel import Mycel # Type hinting and introspection of simulation state
+import os
 import csv # Writing CSV files
+import logging
+logger = logging.getLogger("pycelium")
+from core.mycel import Mycel # Type hinting and introspection of simulation state
 
 def export_to_csv(mycel: Mycel, filename="mycelium.csv", all_time=False):
     """
@@ -66,9 +69,8 @@ def export_to_csv(mycel: Mycel, filename="mycelium.csv", all_time=False):
                     r, g, b # colour channels
                 ]
                 writer.writerow(row) # Write one row per segment
-
     # Inform user that exports completed
-    print(f"📄 CSV exported: {filename}")
+    logger.info(f"CSV exported: {filename}")
 
 def export_to_obj(mycel: Mycel, filename="mycelium.obj"):
     """
@@ -106,7 +108,7 @@ def export_to_obj(mycel: Mycel, filename="mycelium.obj"):
         # Write line definitions: 'l v1 v2'
         for e in edges:
             f.write(f"l {e[0]} {e[1]}\n")            
-    print(f"🌐 OBJ exported: {filename}")
+    logger.info(f"OBJ exported: {filename}")
 
 def export_tip_history(mycel, filename="mycelium_time_series.csv"):
     """
@@ -125,8 +127,7 @@ def export_tip_history(mycel, filename="mycelium_time_series.csv"):
             for x, y, z in tips:
                 # Format time to 2 decimals for consistency
                 writer.writerow([f"{time:.2f}", x, y, z])
-
-    print(f"🧪 Tip position time series exported: {filename}")
+    logger.info(f"Tip history exported: {filename}")
 
 def export_biomass_history(mycel: Mycel, filename: str):
     """
@@ -147,5 +148,4 @@ def export_biomass_history(mycel: Mycel, filename: str):
             tips_count = len(mycel.step_history[i][1]) if i < len(mycel.step_history) else 0
             # Wite one row per time step
             writer.writerow([t, tips_count, biomass])
-            
-    print(f"🪵 Biomass & tip‐count history exported: {filename}")
+    logger.info(f"Biomass history exported: {filename}")

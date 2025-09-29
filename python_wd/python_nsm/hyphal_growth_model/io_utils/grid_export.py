@@ -5,6 +5,8 @@ import numpy as np # Array saving and numerical operations
 import matplotlib.pyplot as plt # Image export functionality
 from vis.density_map import DensityGrid # Defining grid structure
 import os # File path checks and creation
+import logging
+logger = logging.getLogger("pycelium")
 
 def export_grid_to_csv(grid: DensityGrid, filename: str):
     """
@@ -21,8 +23,8 @@ def export_grid_to_csv(grid: DensityGrid, filename: str):
         fmt="%.4f" # Format each number to 4 decimal places
     )
     # Inform the user that the CSV export succeeded
-    print(f"✅ Density grid saved to CSV: {filename}")
-
+    logger.info(f"Density grid CSV exported: {filename}")
+    
 def export_grid_to_png(grid: DensityGrid, filename: str, cmap="hot"):
     """
     Save the density grid as an image (heatmap) in PNG format.
@@ -40,4 +42,4 @@ def export_grid_to_png(grid: DensityGrid, filename: str, cmap="hot"):
         origin='lower' # Place the [0,0] index at the lower-left of the image
     )
     # Inform the user that the PNG export succeeded 
-    print(f"🖼️ Density heatmap saved as image: {filename}")
+    logger.info(f"Density grid PNG exported: {filename}")

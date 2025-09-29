@@ -1,10 +1,15 @@
 # launcher/run.py
 
 # Imports
-import argparse # Parsing command-line args
-from config.sim_config import load_options_from_json, load_options_from_cli # Helper functions to load Options from JSON or from CLI flags
-from gui.sim_gui import OptionGUI # GUI class to launch graphical simulator
-from main import simulate # Run the simulation headlessly
+import argparse  # Parsing command-line args
+from config.sim_config import load_options_from_json, load_options_from_cli  # Helper functions to load Options from JSON or from CLI flags
+from gui.sim_gui import OptionGUI  # GUI class to launch graphical simulator
+from main import simulate  # Run the simulation headlessly
+import os
+import random # For unified seed
+import numpy as np
+from io_utils.run_paths import resolve_seed, compute_run_dir # Per-run folder helpers
+
 
 def run_gui():
     """
@@ -12,7 +17,8 @@ def run_gui():
     Initialises and displays the Tkinter interface.
     """
     print("🖥️ Launching GUI mode...")
-    OptionGUI() # Instantiate the GUI, which calls mainloop internally
+    OptionGUI()  # Instantiate the GUI, which calls mainloop internally
+
 
 def run_cli(config=None, steps=None):
     """
@@ -23,13 +29,26 @@ def run_cli(config=None, steps=None):
     """
     print("🧬 Running standard simulation...")
     if config:
-        # Load sim opts from the provided JSON config gile
+        # Load sim opts from the provided JSON config file
         opts = load_options_from_json(config)
     else:
         # Load opts and steps from CLI flags (prompts user or uses defaults)
         opts, steps = load_options_from_cli()
-    # Run the sim w/ loaded opts and steps (default 120)
+
+    # --- NEW: resolve seed & set RNGs consistently across CLI/GUI/Batch ---
+    seed = resolve_seed(getattr(opts, "seed", None))
+    opts.seed = seed
+    random.seed(seed)
+    np.random.seed(seed)
+
+    # --- NEW: create unique per-run folder & inform downstream via env var ---
+    run_dir = compute_run_dir("outputs", seed)  # e.g., outputs/20250925_1_123456789
+    os.environ["BATCH_OUTPUT_DIR"] = str(run_dir)
+    print(f"📂 Outputs will be written to: {run_dir} (seed={seed})")
+
+    # Run the sim with loaded opts and steps (default 120)
     simulate(opts, steps or 120)
+
 
 def run_sweep(param, values, steps):
     """
@@ -45,6 +64,7 @@ def run_sweep(param, values, steps):
     # Plot results using a helper function
     plot_sweep(results, param_label=param)
 
+
 def parse_args():
     """
     Define and parse command-line args for this launcher.
@@ -57,7 +77,7 @@ def parse_args():
     parser.add_argument("--mode", type=str, default="gui", choices=["gui", "cli", "sweep"], help="Launch mode")
     # Optional path to JSON config for cli mode
     parser.add_argument("--config", type=str, help="Path to JSON config")
-    # Optional ovveride for no. steps
+    # Optional override for no. steps
     parser.add_argument("--steps", type=int, help="Override number of steps")
     # For sweep mode: name of param to vary
     parser.add_argument("--sweep_param", type=str, help="Param to sweep (e.g. branch_probability)")
@@ -66,6 +86,7 @@ def parse_args():
     # For sweep mode: no. steps per sim
     parser.add_argument("--sweep_steps", type=int, default=120, help="Steps per sweep simulation")
     return parser.parse_args()
+
 
 if __name__ == "__main__":
     # Entry point when this script is executed directly

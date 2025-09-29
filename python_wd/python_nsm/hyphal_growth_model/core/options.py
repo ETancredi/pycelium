@@ -2,7 +2,7 @@
 
 # Imports
 from dataclasses import dataclass, field # Dataclass decorator and field factory function for default mutable fields
-from typing import List, Tuple # Import list and Tuple for tupe annotations of parameters
+from typing import List, Tuple, Optional # Import list and Tuple for tupe annotations of parameters, import optional for setting seed
 
 @dataclass
 class Options:
@@ -50,7 +50,7 @@ class Options:
     density_field_enabled: bool = True # Toggle for computing a crowding field from all sources
     density_threshold: float = 0.2 # Field value above which sgements are considered too dense
     charge_unit_length: float = 20.0 # Scaling factor for how much "charge" each segment contributed to the field
-    neighbour_radius: float = 400.0 # Radius (distance) w/in which other tips count towards density
+    neighbour_radius: float = 20.0 # Radius (distance) w/in which other tips count towards density
     density_from_tips: bool = True # Include tip contributions in the density field
     density_from_branches: bool = True # Include branch (non-tip segment) contributions
     density_from_all: bool = True # Include all segments when computing density       
@@ -101,4 +101,31 @@ class Options:
     color_mutation_scale: float = 0.02      # Laplace “b” parameter for distribution of colour changes
     
     # Reproducibility
-    seed: int = 123 # Fixed seed for reproducible simulation runs
+    seed: Optional[int] = None # Fixed seed for reproducible simulation runs, but made optional so we can omit if we want multiple reps
+
+    # Output toggles (all True by default)
+    generate_biomass_and_tips_history: bool = True
+    generate_branching_angles_png: bool = True
+    generate_branching_angles_csv: bool = True
+    generate_mycelium_2d_png: bool = True
+    generate_mycelium_3d_png: bool = True
+    generate_mycelium_3d_interactive_html: bool = True
+    generate_mycelium_final_csv: bool = True
+    generate_mycelium_time_series_csv: bool = True
+    generate_mycelium_growth_mp4: bool = True
+
+    # Optional (usually OFF if you’re slimming outputs; default True for compatibility)
+    generate_tip_orientations_png: bool = True
+    generate_tip_orientations_csv: bool = True
+    generate_density_map_png: bool = True
+    generate_density_map_csv: bool = True
+    generate_stats_png: bool = True
+    generate_obj_mesh: bool = True
+
+    # Nutrient field plots (only considered when opts.use_nutrient_field is True)
+    generate_nutrient_2d_png: bool = True
+    generate_nutrient_3d_png: bool = True
+
+    # Anisotropy plots (only considered when opts.anisotropy_enabled is True)
+    generate_anisotropy_2d_png: bool = True
+    generate_anisotropy_3d_png: bool = True

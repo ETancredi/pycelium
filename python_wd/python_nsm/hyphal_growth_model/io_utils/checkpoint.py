@@ -2,6 +2,8 @@
 
 # Imports
 import time 
+import logging
+logger = logging.getLogger("pycelium")
 from io_utils.saver import save_to_json # Serialise Mycel object to JSON
 from pathlib import Path # Path object for filesystem path manipulations
 
@@ -44,3 +46,4 @@ class CheckpointSaver:
             save_to_json(mycel, str(filename))
             # Update last_step to avoid saving again for this same step
             self.last_step = step
+            logger.debug(f"Checkpoint saved @ step {step}: {filename}")
