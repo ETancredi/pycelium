@@ -30,7 +30,7 @@
   "min_tip_length": 10.0,
   "die_if_too_dense": true,
   "min_supported_tips": 16,
-  "max_supported_tips": 1e20,
+  "max_supported_tips": 1e+20,
 
   "density_field_enabled": true,
   "density_threshold": 0.2,
