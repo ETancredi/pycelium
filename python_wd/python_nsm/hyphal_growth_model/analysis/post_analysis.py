@@ -3,6 +3,8 @@
 # Imports
 import numpy as np # For numerical operations
 import matplotlib.pyplot as plt # For plotting figures and histograms
+import logging 
+logger = logging.getLogger("pycelium.analysis")
 from mpl_toolkits.mplot3d import Axes3D  # For 3D plotting
 from core.mycel import Mycel # Import Mycel class (main mycelium structure)
 from core.section import Section # Import Section class (segment of mycelium)
@@ -27,7 +29,7 @@ def analyse_branching_angles(mycel: Mycel, save_path=None, csv_path=None):
         return
 
     mean_angle = np.mean(angles) # Calculate average branching angle
-    print(f"📐 Mean branching angle: {mean_angle:.2f}°")
+    logger.debug("Mean branching angle: {mean_angle:.2f}°", np.degrees(np.mean(angles)))
 
     # Plot and save histogram of branching angles if save_path is provided (if not, uses default)
     if save_path:
@@ -39,7 +41,7 @@ def analyse_branching_angles(mycel: Mycel, save_path=None, csv_path=None):
         plt.tight_layout()
         plt.savefig(save_path)
         plt.close()
-        print(f"📊 Branching angle histogram saved to {save_path}")
+        logger.debug("Branching angle histogram saved to %s", save_path)
     
     # Export angles to CSV if csv_path is provided
     if csv_path:
@@ -49,7 +51,7 @@ def analyse_branching_angles(mycel: Mycel, save_path=None, csv_path=None):
             writer.writerow(["BranchingAngleDegrees"])
             for angle in angles:
                 writer.writerow([angle])
-        print(f"📄 Branching angles exported to {csv_path}")
+        logger.debug("Branching angles exported to %s", csv_path)
 
 # Utility function to calculate angle in degrees between two vectors
 def vector_angle_deg(v1, v2):
@@ -92,7 +94,7 @@ def analyse_tip_orientations(mycel: Mycel, save_path=None, csv_path=None):
     if save_path:
         plt.savefig(save_path)
         plt.close()
-        print(f"🧭 Saved tip orientation histogram to {save_path}")
+        logger.debug("Tip orientation histogram saved to %s", save_path)
 
     # Save orientation vectors to csv if path is provided
     if csv_path:
@@ -102,4 +104,4 @@ def analyse_tip_orientations(mycel: Mycel, save_path=None, csv_path=None):
             writer.writerow(["X", "Y", "Z"]) # Header
             for u, v, w in orientations:
                 writer.writerow([u, v, w]) # Write each vector
-        print(f"📄 Orientation vectors exported to {csv_path}")
+        logger.debug("Orientation vectors exported to %s", csv_path)
