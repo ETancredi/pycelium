@@ -294,6 +294,7 @@ def simulate(opts, steps=120):
     logger.info(f"Saving outputs to: {output_dir}")
     generate_outputs(mycel, components, output_dir=output_dir)  # Generate all plots and exports
 
+    logger.info("✅ Simulation completed")
 
 if __name__ == "__main__":
     # If run directly, load a default config and simulate
