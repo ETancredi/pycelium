@@ -14,28 +14,28 @@
 
   "autotropism": 1.0,
   "gravitropism": 0.0,
-  "random_walk": 0.2,
+  "random_walk": 0.4,
   "length_scaled_growth": true,
   "length_growth_coef": 0.1,
   "curvature_branch_bias": 0.25,
 
-  "direction_memory_blend": 0.2,
+  "direction_memory_blend": 0.1,
   "field_alignment_boost": 0.2,
   "field_curvature_influence": 0.2,
 
   "max_length": 50.0,
+  "die_if_old": false,
   "max_age": 300.0,
   "min_tip_age": 10.0,
   "min_tip_length": 10.0,
-  "die_if_old": false,
   "die_if_too_dense": true,
   "min_supported_tips": 16,
-  "max_supported_tips": 10000,
+  "max_supported_tips": 1000,
 
   "density_field_enabled": true,
   "density_threshold": 0.2,
   "charge_unit_length": 20.0,
-  "neighbour_radius": 20.0,
+  "neighbour_radius": 400.0,
   "density_from_tips": true,
   "density_from_branches": true,
   "density_from_all": true,
@@ -46,11 +46,11 @@
   "gravi_layer_thickness": 40.0,
 
   "record_dead_tips": true,
-  "source_config_path": "config/example.json",
+  "source_config_path": "",
 
   "use_nutrient_field": false,
-  "nutrient_attractors": [ [ [30, 30, 0], 1.0 ] ],
-  "nutrient_repellents": [ [ [-20, -20, 0], -1.0 ] ],
+  "nutrient_attractors": [[[30, 30, 0], 1.0]],
+  "nutrient_repellents": [[[-20, -20, 0], -1.0]],
 
   "nutrient_attraction": 0.0,
   "nutrient_repulsion": 0.0,
@@ -61,5 +61,43 @@
 
   "anisotropy_enabled": false,
   "anisotropy_vector": [1.0, 0.0, 0.0],
-  "anisotropy_strength": 0.1
+  "anisotropy_strength": 0.1,
+
+  "volume_constraint": false,
+  "x_min": -10.0,
+  "x_max": 10.0,
+  "y_min": -10.0,
+  "y_max": 10.0,
+  "z_min": -10.0,
+  "z_max": 10.0,
+
+  "rgb_mutations_enabled": false,
+  "initial_color": [0.5, 0.5, 0.5],
+  "color_mutation_prob": 0.05,
+  "color_mutation_scale": 0.02,
+
+  "seed": null,
+
+  "generate_biomass_and_tips_history": true,
+  "generate_branching_angles_png": true,
+  "generate_branching_angles_csv": true,
+  "generate_mycelium_2d_png": true,
+  "generate_mycelium_3d_png": true,
+  "generate_mycelium_3d_interactive_html": true,
+  "generate_mycelium_final_csv": true,
+  "generate_mycelium_time_series_csv": true,
+  "generate_mycelium_growth_mp4": true,
+
+  "generate_tip_orientations_png": true,
+  "generate_tip_orientations_csv": true,
+  "generate_density_map_png": true,
+  "generate_density_map_csv": true,
+  "generate_stats_png": true,
+  "generate_obj_mesh": true,
+
+  "generate_nutrient_2d_png": true,
+  "generate_nutrient_3d_png": true,
+
+  "generate_anisotropy_2d_png": true,
+  "generate_anisotropy_3d_png": true
 }
