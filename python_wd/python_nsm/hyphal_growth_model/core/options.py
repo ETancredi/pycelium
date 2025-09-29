@@ -103,7 +103,7 @@ class Options:
     # Reproducibility
     seed: Optional[int] = None # Fixed seed for reproducible simulation runs, but made optional so we can omit if we want multiple reps
 
-    # Output toggles
+    # Output toggles (all True by default)
     generate_biomass_and_tips_history: bool = True
     generate_branching_angles_png: bool = True
     generate_branching_angles_csv: bool = True
@@ -113,3 +113,19 @@ class Options:
     generate_mycelium_final_csv: bool = True
     generate_mycelium_time_series_csv: bool = True
     generate_mycelium_growth_mp4: bool = True
+
+    # Optional (usually OFF if you’re slimming outputs; default True for compatibility)
+    generate_tip_orientations_png: bool = True
+    generate_tip_orientations_csv: bool = True
+    generate_density_map_png: bool = True
+    generate_density_map_csv: bool = True
+    generate_stats_png: bool = True
+    generate_obj_mesh: bool = True
+
+    # Nutrient field plots (only considered when opts.use_nutrient_field is True)
+    generate_nutrient_2d_png: bool = True
+    generate_nutrient_3d_png: bool = True
+
+    # Anisotropy plots (only considered when opts.anisotropy_enabled is True)
+    generate_anisotropy_2d_png: bool = True
+    generate_anisotropy_3d_png: bool = True
