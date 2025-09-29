@@ -102,3 +102,14 @@ class Options:
     
     # Reproducibility
     seed: Optional[int] = None # Fixed seed for reproducible simulation runs, but made optional so we can omit if we want multiple reps
+
+    # Output toggles
+    generate_biomass_and_tips_history: bool = True
+    generate_branching_angles_png: bool = True
+    generate_branching_angles_csv: bool = True
+    generate_mycelium_2d_png: bool = True
+    generate_mycelium_3d_png: bool = True
+    generate_mycelium_3d_interactive_html: bool = True
+    generate_mycelium_final_csv: bool = True
+    generate_mycelium_time_series_csv: bool = True
+    generate_mycelium_growth_mp4: bool = True
