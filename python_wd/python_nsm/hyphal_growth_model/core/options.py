@@ -50,7 +50,7 @@ class Options:
     density_field_enabled: bool = True # Toggle for computing a crowding field from all sources
     density_threshold: float = 0.2 # Field value above which sgements are considered too dense
     charge_unit_length: float = 20.0 # Scaling factor for how much "charge" each segment contributed to the field
-    neighbour_radius: float = 400.0 # Radius (distance) w/in which other tips count towards density
+    neighbour_radius: float = 20.0 # Radius (distance) w/in which other tips count towards density
     density_from_tips: bool = True # Include tip contributions in the density field
     density_from_branches: bool = True # Include branch (non-tip segment) contributions
     density_from_all: bool = True # Include all segments when computing density       
