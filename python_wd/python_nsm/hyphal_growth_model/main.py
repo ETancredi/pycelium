@@ -201,7 +201,7 @@ def step_simulation(mycel, components, step):
 
 def generate_outputs(mycel, components, output_dir="outputs"):
     """
-    After simulation ends, generate all plots, exports, and analyses into the specific output dir
+    Generate artifacts conditionally, based on boolean flags in Options.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -211,55 +211,90 @@ def generate_outputs(mycel, components, output_dir="outputs"):
     opts = components["opts"]
     anisotropy_grid = components.get("anisotropy_grid", None)
 
-    logger.info(f"Saving plots and tables to '{output_dir}'...")
+    logger.info(f"Saving selected outputs to '{output_dir}'...")
 
-    # 2D and 3D static plots
-    plot_mycel(mycel, title="2D Projection", save_path=f"{output_dir}/mycelium_2d.png")
-    plot_mycel_3d(mycel, title="3D Projection", save_path=f"{output_dir}/mycelium_3d.png")
-    plot_density(grid, save_path=f"{output_dir}/density_map.png")
-    plot_stats(stats, save_path=f"{output_dir}/stats.png")
-    plot_mycel_3d_interactive(mycel, save_path=f"{output_dir}/mycelium_3d_interactive.html")
+    # --- Core plots ---
+    if opts.generate_mycelium_2d_png:
+        plot_mycel(mycel, title="2D Projection", save_path=f"{output_dir}/mycelium_2d.png")
 
-    # Nutrient field visualisations if enabled
+    if opts.generate_mycelium_3d_png:
+        plot_mycel_3d(mycel, title="3D Projection", save_path=f"{output_dir}/mycelium_3d.png")
+
+    if opts.generate_mycelium_3d_interactive_html:
+        plot_mycel_3d_interactive(mycel, save_path=f"{output_dir}/mycelium_3d_interactive.html")
+
+    # Optional diagnostics
+    if opts.generate_density_map_png:
+        from vis.density_map import plot_density
+        plot_density(grid, save_path=f"{output_dir}/density_map.png")
+
+    if opts.generate_stats_png:
+        from vis.analyser import plot_stats
+        plot_stats(stats, save_path=f"{output_dir}/stats.png")
+
+    # Nutrient field visuals (only if enabled)
     if opts.use_nutrient_field:
-        plot_nutrient_field_2d(opts, save_path=f"{output_dir}/nutrient_2d.png")
-        plot_nutrient_field_3d(opts, save_path=f"{output_dir}/nutrient_3d.png")
+        if opts.generate_nutrient_2d_png:
+            plot_nutrient_field_2d(opts, save_path=f"{output_dir}/nutrient_2d.png")
+        if opts.generate_nutrient_3d_png:
+            plot_nutrient_field_3d(opts, save_path=f"{output_dir}/nutrient_3d.png")
 
-    # Anisotropy grid visualisations if enabled
+    # Anisotropy visuals (only if enabled)
     if opts.anisotropy_enabled and anisotropy_grid:
-        plot_anisotropy_2d(anisotropy_grid, save_path=f"{output_dir}/anisotropy_2d.png")
-        plot_anisotropy_3d(anisotropy_grid, save_path=f"{output_dir}/anisotropy_3d.png")
+        if opts.generate_anisotropy_2d_png:
+            plot_anisotropy_2d(anisotropy_grid, save_path=f"{output_dir}/anisotropy_2d.png")
+        if opts.generate_anisotropy_3d_png:
+            plot_anisotropy_3d(anisotropy_grid, save_path=f"{output_dir}/anisotropy_3d.png")
 
-    # Post-analysis: branching angles and tip orientations
-    analyse_branching_angles(
-        mycel,
-        save_path=f"{output_dir}/branching_angles.png",
-        csv_path=f"{output_dir}/branching_angles.csv"
-    )
-    analyse_tip_orientations(
-        mycel,
-        save_path=f"{output_dir}/tip_orientations.png",
-        csv_path=f"{output_dir}/orientations.csv"
-    )
+    # Post-analysis: branching angles (run once; write whichever are enabled)
+    if opts.generate_branching_angles_png or opts.generate_branching_angles_csv:
+        analyse_branching_angles(
+            mycel,
+            save_path=(f"{output_dir}/branching_angles.png" if opts.generate_branching_angles_png else None),
+            csv_path=(f"{output_dir}/branching_angles.csv" if opts.generate_branching_angles_csv else None),
+        )
 
-    # Export data tables and 3D geometry
-    export_grid_to_csv(grid, f"{output_dir}/density_map.csv")
-    export_to_csv(mycel, f"{output_dir}/mycelium_time_step.csv", all_time=True)
-    export_to_csv(mycel, f"{output_dir}/mycelium_final.csv", all_time=False)
-    export_to_obj(mycel, f"{output_dir}/mycelium.obj")
-    export_tip_history(mycel, f"{output_dir}/mycelium_time_series.csv")
+    # (Optional) Tip orientations
+    if opts.generate_tip_orientations_png or opts.generate_tip_orientations_csv:
+        analyse_tip_orientations(
+            mycel,
+            save_path=(f"{output_dir}/tip_orientations.png" if opts.generate_tip_orientations_png else None),
+            csv_path=(f"{output_dir}/orientations.csv" if opts.generate_tip_orientations_csv else None),
+        )
 
-    # Create a video or GIF of tip positions over time
-    animate_growth(
-        csv_path=f"{output_dir}/mycelium_time_series.csv",
-        save_path=f"{output_dir}/mycelium_growth.mp4",
-        interval=100  # ms per frame
-    )
+    # Final state & histories
+    if opts.generate_mycelium_final_csv:
+        export_to_csv(mycel, f"{output_dir}/mycelium_final.csv", all_time=False)
 
-    # Export biomass and tip history
-    export_tip_history(mycel, f"{output_dir}/mycelium_time_series.csv")
-    export_biomass_history(mycel, f"{output_dir}/biomass_and_tips_history.csv")
+    if opts.generate_density_map_csv:
+        export_grid_to_csv(grid, f"{output_dir}/density_map.csv")
 
+    # Time-series CSV + animation (dependency handled)
+    series_path = f"{output_dir}/mycelium_time_series.csv"
+    need_series_for_mp4 = opts.generate_mycelium_growth_mp4
+
+    if opts.generate_mycelium_time_series_csv or need_series_for_mp4:
+        export_tip_history(mycel, series_path)
+
+    if opts.generate_mycelium_growth_mp4:
+        animate_growth(
+            csv_path=series_path,
+            save_path=f"{output_dir}/mycelium_growth.mp4",
+            interval=100
+        )
+        # If the CSV was only needed for MP4 and not requested to keep, remove it
+        if not opts.generate_mycelium_time_series_csv:
+            try:
+                os.remove(series_path)
+            except OSError:
+                pass
+
+    if opts.generate_biomass_and_tips_history:
+        export_biomass_history(mycel, f"{output_dir}/biomass_and_tips_history.csv")
+
+    # 3D mesh (OBJ) if desired
+    if opts.generate_obj_mesh:
+        export_to_obj(mycel, f"{output_dir}/mycelium.obj")
 
 def simulate(opts, steps=120):
     """
