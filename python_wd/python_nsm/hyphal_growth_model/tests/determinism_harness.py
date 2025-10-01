@@ -1,4 +1,3 @@
-
 # tests/determinism_harness.py
 
 """
@@ -26,22 +25,42 @@ from core.options import Options
 from core import section as section_mod
 import main as runner  # setup_simulation, step_simulation
 
+
+def _pt_xyz(p) -> tuple[float, float, float]:
+    """Extract (x,y,z) triple from an MPoint or compatible object."""
+    if hasattr(p, "coords"):
+        c = p.coords
+        return float(c[0]), float(c[1]), float(c[2])
+    # fallback for legacy attributes
+    x = getattr(p, "x", None)
+    y = getattr(p, "y", None)
+    z = getattr(p, "z", None)
+    if x is not None and y is not None and z is not None:
+        return float(x), float(y), float(z)
+    try:
+        return float(p[0]), float(p[1]), float(p[2])
+    except Exception:
+        return 0.0, 0.0, 0.0
+
+
 # --- Canonical snapshot encoding ---
 
 def _bool_byte(x: bool) -> bytes:
     return b"\x01" if x else b"\x00"
 
+
 def _pack_f64(x: float) -> bytes:
     # Normalise -0.0/+0.0 and NaNs to a canonical bit-pattern
     if x == 0.0:
         x = 0.0  # strip -0.0
-    # For NaN, use a fixed payload
     if isinstance(x, float) and math.isnan(x):
         return struct.pack("<Q", 0x7ff8000000000000)
     return struct.pack("<d", float(x))
 
+
 def _pack_i64(x: int) -> bytes:
     return struct.pack("<q", int(x))
+
 
 def section_bytes(sec: Section) -> bytes:
     """
@@ -52,30 +71,43 @@ def section_bytes(sec: Section) -> bytes:
     parts = []
     parts.append(_pack_i64(int(sec.id)))
     parts.append(_pack_i64(parent_id))
+
     # Start / End coordinates
-    parts.append(_pack_f64(sec.start.x)); parts.append(_pack_f64(sec.start.y)); parts.append(_pack_f64(sec.start.z))
-    parts.append(_pack_f64(sec.end.x));   parts.append(_pack_f64(sec.end.y));   parts.append(_pack_f64(sec.end.z))
+    sx, sy, sz = _pt_xyz(sec.start)
+    parts.append(_pack_f64(sx)); parts.append(_pack_f64(sy)); parts.append(_pack_f64(sz))
+    ex, ey, ez = _pt_xyz(sec.end)
+    parts.append(_pack_f64(ex)); parts.append(_pack_f64(ey)); parts.append(_pack_f64(ez))
+
     # Orientation & memory
-    parts.append(_pack_f64(sec.orientation.x)); parts.append(_pack_f64(sec.orientation.y)); parts.append(_pack_f64(sec.orientation.z))
+    ox, oy, oz = _pt_xyz(sec.orientation)
+    parts.append(_pack_f64(ox)); parts.append(_pack_f64(oy)); parts.append(_pack_f64(oz))
     if hasattr(sec, "direction_memory"):
-        parts.append(_pack_f64(sec.direction_memory.x)); parts.append(_pack_f64(sec.direction_memory.y)); parts.append(_pack_f64(sec.direction_memory.z))
+        mx, my, mz = _pt_xyz(sec.direction_memory)
+        parts.append(_pack_f64(mx)); parts.append(_pack_f64(my)); parts.append(_pack_f64(mz))
+
     # Scalars
     for name in ["length", "age"]:
         parts.append(_pack_f64(getattr(sec, name, 0.0)))
+
     # Flags
     for name in ["is_tip", "is_dead"]:
         parts.append(_bool_byte(bool(getattr(sec, name, False))))
+
     # Colour (RGB as floats 0..1)
-    r,g,b = getattr(sec, "color", (0.0,0.0,0.0))
+    r, g, b = getattr(sec, "color", (0.0, 0.0, 0.0))
     parts.append(_pack_f64(r)); parts.append(_pack_f64(g)); parts.append(_pack_f64(b))
+
     # Branch counts / metadata if present
     for name in ["children_count", "branch_count"]:
         if hasattr(sec, name):
             parts.append(_pack_i64(int(getattr(sec, name))))
+
     # Bounds clamping indicator if available
     if hasattr(sec, "clamped_last_step"):
         parts.append(_bool_byte(bool(sec.clamped_last_step)))
+
     return b"".join(parts)
+
 
 def mycel_bytes(mycel) -> bytes:
     """
@@ -93,8 +125,10 @@ def mycel_bytes(mycel) -> bytes:
         parts.append(section_bytes(sec))
     return b"|".join(parts)
 
+
 def mycel_hash(mycel) -> str:
     return hashlib.sha256(mycel_bytes(mycel)).hexdigest()
+
 
 def run_and_hash(opts: Options, steps: int, output_csv: str = "outputs/state_hashes.csv") -> None:
     """
@@ -107,7 +141,7 @@ def run_and_hash(opts: Options, steps: int, output_csv: str = "outputs/state_has
     # Build sim
     mycel, components = runner.setup_simulation(opts)
 
-    rows = [("step","sha256")]
+    rows = [("step", "sha256")]
     for step in range(steps):
         # advance sim one step
         runner.step_simulation(mycel, components, step)
@@ -126,17 +160,18 @@ def run_and_hash(opts: Options, steps: int, output_csv: str = "outputs/state_has
     for r in rows:
         print(f"{r[0]},{r[1]}")
 
+
 if __name__ == "__main__":
     # CLI usage:
-    #   python -m tests.determinism_harness configs/param_config.json 60
-    import argparse, json
+    #   python -m tests.determinism_harness config/param_config.json 60
+    import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("config_json", nargs="?", default="config/param_config.json")
     parser.add_argument("steps", type=int, nargs="?", default=60)
     parser.add_argument("--output", default="outputs/state_hashes.csv")
     args = parser.parse_args()
 
-    # Load Options via project helper if available; else parse minimal JSON to Options
+    # Load Options via project helper
     from config.sim_config import load_options_from_json
     opts = load_options_from_json(args.config_json)
     run_and_hash(opts, args.steps, args.output)
