@@ -1,5 +1,4 @@
 # parallel/engine.py
-
 """
 Deterministic parallel step skeleton for Pycelium.
 
@@ -106,3 +105,86 @@ class ParallelStepEngine:
         step: int,
         section_ids: List[int],
     ) -> Tuple[List[Proposal], List[Any]]:
+        """
+        *** PLACEHOLDER ***
+        Encapsulate per-section decisions (grow, update, branch, kill).
+        This MUST be SIDE-EFFECT FREE. Use only the snapshot & opts to compute outputs.
+
+        Next commit: transplant CSF operations here in the same call-count/RNG order.
+        """
+        proposals: List[Proposal] = []
+        payloads: List[Any] = []
+        # Example structure for later:
+        # for sid in section_ids:
+        #     row = snapshot.index_of[sid]
+        #     k = 0
+        #     u = rng.u01(step, sid, k); k += 1
+        #     # derive decisions using snapshot.* arrays
+        #     # payloads.append(...); proposals.append(Proposal((sid, sid), OP_..., payload_idx, target_id=sid))
+        return proposals, payloads
+
+    def step_parallel_equivalent(self, mycel, components: Dict[str, Any], step: int, master_seed: Optional[int]) -> None:
+        """
+        One deterministic step:
+          1) Snapshot current state
+          2) Compute proposals (optionally in parallel)
+          3) Stable-sort proposals by apply_key to mirror CSF order
+          4) Apply proposals serially to 'mycel' (single writer)
+        """
+        opts: Options = components["opts"]
+
+        # --- robust seed handling (fix for None) ---
+        # Prefer the explicit master_seed; else fall back to opts.seed; else constant 0
+        eff_seed = master_seed if master_seed is not None else getattr(opts, "seed", None)
+        if eff_seed is None:
+            eff_seed = 0
+        rng = DetRNG(eff_seed)
+
+        # 1) Snapshot *before* any changes this step
+        snapshot = take_snapshot(mycel.sections)
+
+        # Partition section IDs for proposal computation
+        section_ids = snapshot.ids[:]  # already in ascending ID
+
+        # PHASE 1: serial proposal computation
+        all_props, all_payloads = self.compute_proposals(mycel, snapshot, opts, rng, step, section_ids)
+
+        # 3) Stable, deterministic order identical to CSF
+        all_props.sort(key=lambda p: (p.apply_key[0], p.apply_key[1]))
+
+        # 4) Apply serially (single writer). This is where we mutate 'mycel'.
+        for prop in all_props:
+            payload = all_payloads[prop.payload_idx] if prop.payload_idx is not None else None
+            self._apply_proposal(mycel, opts, prop, payload)
+
+        # While compute_proposals is a no-op, delegate to the CSF step to keep behaviour identical:
+        if not all_props:
+            import main as runner
+            runner.step_simulation(mycel, components, step)
+
+    # ---- Applying proposals (single-thread) ----
+
+    def _apply_proposal(self, mycel, opts: Options, prop: Proposal, payload: Any) -> None:
+        if prop.op == OP_UPDATE_SECTION:
+            sid = prop.target_id
+            s = next((sec for sec in mycel.sections if sec.id == sid), None)
+            if s is None:
+                return
+            # payload should include deltas or new fields; placeholder:
+            # s.length = payload.length; s.end = payload.end; etc.
+            pass
+
+        elif prop.op == OP_CREATE_BRANCH:
+            # payload should contain all params to construct a new Section deterministically
+            # e.g., (start_point, orientation, colour, parent_id)
+            pass
+
+        elif prop.op == OP_KILL_SECTION:
+            sid = prop.target_id
+            s = next((sec for sec in mycel.sections if sec.id == sid), None)
+            if s is not None:
+                s.is_dead = True
+
+        else:
+            # Unknown op — ignore
+            pass
