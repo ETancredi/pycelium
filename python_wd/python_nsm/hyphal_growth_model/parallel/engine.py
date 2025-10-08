@@ -1,190 +1,195 @@
 # parallel/engine.py
+# parallel/engine.py
 """
 Deterministic parallel step skeleton for Pycelium.
 
-Phase 0 (this file): structure and determinism only.
-- Takes a read-only snapshot of state.
-- Computes per-entity proposals (in parallel in Phase 2).
-- Applies proposals in a *stable, CSF-identical order*.
-- Uses counter-based RNG keyed by (seed, step, entity_id, k).
+Phase 1 (this file): behaviour-identical reimplementation of Mycel.step()
+inside the engine, so we no longer fall back to runner.step_simulation.
+We keep the same visit order and RNG usage (np.random / random) to
+match your current CSF traces exactly.
 
-Phase 1: transplant your CSF step logic into `compute_proposals`.
-Phase 2: turn on threads for the proposals stage.
+After we confirm hashes match, we'll parallelise safe phases (e.g., the
+per-section grow/update and branch decision *proposal* stage) while
+keeping a single-writer, stable-order merge.
 
-Nothing here mutates global state outside the stable-merge section.
+Nothing here mutates global state outside the intended, CSF-like sequence.
 """
 
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Optional
-from concurrent.futures import ThreadPoolExecutor
 import os
+import random
+import numpy as np
 
-from parallel.det_rng import DetRNG
 from core.section import Section
 from core.options import Options
+from core.point import MPoint  # only for type hints
 
-# ---- Proposal model ---------------------------------------------------------
+# ---- Proposal API (kept for Phase 2; unused in Phase 1) ---------------------
 
-OP_UPDATE_SECTION = 1    # grow/update fields on an existing Section
-OP_CREATE_BRANCH  = 2    # create a new Section as a child
-OP_KILL_SECTION   = 3    # mark section dead
+OP_UPDATE_SECTION = 1
+OP_CREATE_BRANCH  = 2
+OP_KILL_SECTION   = 3
 
 @dataclass(frozen=True)
 class Proposal:
-    apply_key: Tuple[int, int]   # (csf_order_key, section_id)
-    op: int                      # one of OP_* above
-    payload_idx: Optional[int]   # index into payloads list for data (None if unused)
-    target_id: Optional[int]     # section being updated/branched/culled; None if not applicable
-
-# ---- Snapshot model ---------------------------------------------------------
+    apply_key: Tuple[int, int]        # (csf_order_key, section_id)
+    op: int                           # one of OP_*
+    payload_idx: Optional[int]        # index into payloads list for data (None if unused)
+    target_id: Optional[int]          # section id target (if applicable)
 
 @dataclass
 class Snapshot:
     ids: List[int]
     is_tip: List[bool]
     is_dead: List[bool]
-    start_xyz: List[Tuple[float, float, float]]
-    end_xyz:   List[Tuple[float, float, float]]
-    orient_xyz:List[Tuple[float, float, float]]
-    ages: List[float]
-    lengths: List[float]
-    index_of: Dict[int, int]  # section_id -> row idx
 
-def _pt_xyz(p) -> Tuple[float, float, float]:
-    if hasattr(p, "coords"):
-        c = p.coords
-        return float(c[0]), float(c[1]), float(c[2])
-    # legacy fallback
-    return float(getattr(p, "x", 0.0)), float(getattr(p, "y", 0.0)), float(getattr(p, "z", 0.0))
+# -----------------------------------------------------------------------------
 
-def take_snapshot(sections: List[Section]) -> Snapshot:
-    # canonical order: ascending section.id
-    ordered = sorted(sections, key=lambda s: int(s.id))
-    ids, is_tip, is_dead = [], [], []
-    start_xyz, end_xyz, orient_xyz = [], [], []
-    ages, lengths = [], []
-    index_of = {}
-    for row, s in enumerate(ordered):
-        ids.append(int(s.id))
-        is_tip.append(bool(s.is_tip))
-        is_dead.append(bool(s.is_dead))
-        start_xyz.append(_pt_xyz(s.start))
-        end_xyz.append(_pt_xyz(s.end))
-        orient_xyz.append(_pt_xyz(s.orientation))
-        ages.append(float(getattr(s, "age", 0.0)))
-        lengths.append(float(getattr(s, "length", 0.0)))
-        index_of[int(s.id)] = row
-    return Snapshot(ids, is_tip, is_dead, start_xyz, end_xyz, orient_xyz, ages, lengths, index_of)
-
-# ---- Core engine ------------------------------------------------------------
+def _effective_seed(opts: Options, master_seed: Optional[int]) -> int:
+    s = master_seed if master_seed is not None else getattr(opts, "seed", None)
+    return 0 if s is None else int(s)
 
 class ParallelStepEngine:
     """
-    Deterministic proposals → stable-merge engine.
-
-    Configuration:
-      - apply_order = "id" (default) — matches CSF if the loop visits sections by creation id.
-      - workers: number of threads used at the proposals stage (Phase 2).
+    Deterministic engine that mirrors Mycel.step() exactly (Phase 1).
+    After validation against your hash oracle, we'll enable parallel
+    proposal computation in Phase 2.
     """
     def __init__(self, apply_order: str = "id", workers: int = 0):
         self.apply_order = apply_order
         self.workers = int(workers)
 
-    @staticmethod
-    def _apply_key_for(section: Section) -> Tuple[int, int]:
-        # First key is the deterministic CSF order (here: section.id), second is id to keep total order.
-        return (int(section.id), int(section.id))
+    # --- Phase 1: direct, behaviour-identical step implementation ---
+
+    def step_parallel_equivalent(self, mycel, components: Dict[str, Any], step: int, master_seed: Optional[int]) -> None:
+        """
+        EXACT mirror of core/mycel.py::Mycel.step(), using the same loops,
+        order, RNG calls, and side-effects — so per-step hashes remain identical.
+        """
+        opts: Options = components["opts"]
+
+        # Keep RNG usage identical to CSF run
+        # (We seed once at simulation setup; here we just use np.random/random
+        #  exactly as in Mycel.step(), so the draw sequence matches.)
+        new_sections: List[Section] = []
+
+        # Diagnostic parity with your Mycel.step (optional)
+        # logger.debug("STEP START: t=%.2f | total_sections=%d", mycel.time, len(mycel.sections))
+
+        tip_count = len([s for s in mycel.sections if s.is_tip and not s.is_dead])
+
+        # 1) Grow & update existing sections (same list order)
+        for section in mycel.sections:
+            if section.is_dead:
+                continue
+            section.grow(opts.growth_rate, opts.time_step)
+            section.update()
+
+        # 2) Destructor logic: age, length, density, nutrient, isolation
+        for section in mycel.sections:
+            if not section.is_tip or section.is_dead:
+                continue
+
+            # A) age
+            if getattr(opts, "die_if_old", False) and section.age > opts.max_age:
+                section.is_dead = True
+                continue
+
+            # B) length
+            if section.length > opts.max_length:
+                section.is_dead = True
+                continue
+
+            # C) density (uses field_aggregator if present)
+            if getattr(opts, "die_if_too_dense", False) and section.field_aggregator:
+                density = section.field_aggregator.compute_field(section.end)[0]
+                if density > opts.density_threshold:
+                    section.is_dead = True
+                    continue
+
+            # D) nutrient repulsion kill
+            if getattr(opts, "use_nutrient_field", False) and section.field_aggregator:
+                nutrient_field = section.field_aggregator.compute_field(section.end)[0]
+                if nutrient_field < -abs(getattr(opts, "nutrient_repulsion", 0.0)):
+                    section.is_dead = True
+                    continue
+
+            # E) isolation
+            if section.field_aggregator:
+                nearby_count = 0
+                # neighbour check only among *current* tips
+                for other in [s for s in mycel.sections if s.is_tip and not s.is_dead]:
+                    if other is section:
+                        continue
+                    if section.end.distance_to(other.end) <= opts.neighbour_radius:
+                        nearby_count += 1
+                if nearby_count < opts.min_supported_tips:
+                    section.is_dead = True
+                    continue
+
+        # 3) Branching
+        for section in mycel.sections:
+            if section.is_dead:
+                continue
+            if section.is_tip or opts.allow_internal_branching:
+                child = section.maybe_branch(opts.branch_probability, tip_count=tip_count)
+                if child:
+                    new_sections.append(child)
+
+        if new_sections:
+            mycel.sections.extend(new_sections)
+
+        # 4) Record tip snapshot (positions and metrics)
+        step_snapshot = [
+            {
+                "time": mycel.time,
+                "x": tip.end.coords[0],
+                "y": tip.end.coords[1],
+                "z": tip.end.coords[2],
+                "age": tip.age,
+                "length": tip.length,
+            }
+            for tip in [s for s in mycel.sections if s.is_tip and not s.is_dead]
+        ]
+        mycel.time_series.append(step_snapshot)
+
+        # Advance time
+        mycel.time += opts.time_step
+
+        # 5) Pruning by max_supported_tips
+        if hasattr(opts, "max_supported_tips") and opts.max_supported_tips > 0:
+            active_tips = [s for s in mycel.sections if s.is_tip and not s.is_dead]
+            if len(active_tips) > opts.max_supported_tips:
+                excess = len(active_tips) - opts.max_supported_tips
+                to_prune = np.random.choice(active_tips, size=excess, replace=False)
+                for tip in to_prune:
+                    tip.is_dead = True
+
+        # 6) Update histories / biomass
+        tip_data = [(tip.end.coords[0], tip.end.coords[1], tip.end.coords[2])
+                    for tip in [s for s in mycel.sections if s.is_tip and not s.is_dead]]
+        mycel.step_history.append((mycel.time, tip_data))
+        total_biomass = sum(sec.length for sec in mycel.sections if not sec.is_dead)
+        mycel.biomass_history.append(total_biomass)
+
+    # --- Phase 2 scaffolding (kept for later parallelisation) ----------------
 
     def compute_proposals(
         self,
         mycel,
         snapshot: Snapshot,
         opts: Options,
-        rng: DetRNG,
         step: int,
         section_ids: List[int],
     ) -> Tuple[List[Proposal], List[Any]]:
         """
-        *** PLACEHOLDER ***
-        Encapsulate per-section decisions (grow, update, branch, kill).
-        This MUST be SIDE-EFFECT FREE. Use only the snapshot & opts to compute outputs.
-
-        Next commit: transplant CSF operations here in the same call-count/RNG order.
+        Placeholder for Phase 2: order-independent proposal generation.
+        In Phase 1 we do a direct, mirrored step (above).
         """
-        proposals: List[Proposal] = []
-        payloads: List[Any] = []
-        # Example structure for later:
-        # for sid in section_ids:
-        #     row = snapshot.index_of[sid]
-        #     k = 0
-        #     u = rng.u01(step, sid, k); k += 1
-        #     # derive decisions using snapshot.* arrays
-        #     # payloads.append(...); proposals.append(Proposal((sid, sid), OP_..., payload_idx, target_id=sid))
-        return proposals, payloads
-
-    def step_parallel_equivalent(self, mycel, components: Dict[str, Any], step: int, master_seed: Optional[int]) -> None:
-        """
-        One deterministic step:
-          1) Snapshot current state
-          2) Compute proposals (optionally in parallel)
-          3) Stable-sort proposals by apply_key to mirror CSF order
-          4) Apply proposals serially to 'mycel' (single writer)
-        """
-        opts: Options = components["opts"]
-
-        # --- robust seed handling (fix for None) ---
-        # Prefer the explicit master_seed; else fall back to opts.seed; else constant 0
-        eff_seed = master_seed if master_seed is not None else getattr(opts, "seed", None)
-        if eff_seed is None:
-            eff_seed = 0
-        rng = DetRNG(eff_seed)
-
-        # 1) Snapshot *before* any changes this step
-        snapshot = take_snapshot(mycel.sections)
-
-        # Partition section IDs for proposal computation
-        section_ids = snapshot.ids[:]  # already in ascending ID
-
-        # PHASE 1: serial proposal computation
-        all_props, all_payloads = self.compute_proposals(mycel, snapshot, opts, rng, step, section_ids)
-
-        # 3) Stable, deterministic order identical to CSF
-        all_props.sort(key=lambda p: (p.apply_key[0], p.apply_key[1]))
-
-        # 4) Apply serially (single writer). This is where we mutate 'mycel'.
-        for prop in all_props:
-            payload = all_payloads[prop.payload_idx] if prop.payload_idx is not None else None
-            self._apply_proposal(mycel, opts, prop, payload)
-
-        # While compute_proposals is a no-op, delegate to the CSF step to keep behaviour identical:
-        if not all_props:
-            import main as runner
-            runner.step_simulation(mycel, components, step)
-
-    # ---- Applying proposals (single-thread) ----
+        return [], []
 
     def _apply_proposal(self, mycel, opts: Options, prop: Proposal, payload: Any) -> None:
-        if prop.op == OP_UPDATE_SECTION:
-            sid = prop.target_id
-            s = next((sec for sec in mycel.sections if sec.id == sid), None)
-            if s is None:
-                return
-            # payload should include deltas or new fields; placeholder:
-            # s.length = payload.length; s.end = payload.end; etc.
-            pass
-
-        elif prop.op == OP_CREATE_BRANCH:
-            # payload should contain all params to construct a new Section deterministically
-            # e.g., (start_point, orientation, colour, parent_id)
-            pass
-
-        elif prop.op == OP_KILL_SECTION:
-            sid = prop.target_id
-            s = next((sec for sec in mycel.sections if sec.id == sid), None)
-            if s is not None:
-                s.is_dead = True
-
-        else:
-            # Unknown op — ignore
-            pass
+        # Phase 2 only
+        pass
