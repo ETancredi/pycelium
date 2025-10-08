@@ -1,4 +1,5 @@
 # tests/test_parallel_skeleton_scaffolding.py
+
 """
 Sanity test to ensure the parallel scaffold is behaviour-identical *before* we
 transplant logic. We reuse the harness hasher to compare against a direct CSF run.
