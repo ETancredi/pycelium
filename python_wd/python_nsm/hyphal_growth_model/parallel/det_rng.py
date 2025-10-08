@@ -14,7 +14,6 @@ from __future__ import annotations
 import hashlib
 import math
 
-# map a 64-bit int to [0,1) with 53-bit mantissa (double precision)
 _INV_2_53 = 1.0 / (1 << 53)
 
 def _addr_hash(master_seed: int, step: int, entity_id: int, k: int) -> int:
