@@ -1,147 +1,151 @@
 # parallel/engine.py
-# parallel/engine.py
 """
-Deterministic parallel step skeleton for Pycelium.
+Deterministic engine: faithful, no-delegation mirror of core/mycel.py::Mycel.step().
 
-Phase 1 (this file): behaviour-identical reimplementation of Mycel.step()
-inside the engine, so we no longer fall back to runner.step_simulation.
-We keep the same visit order and RNG usage (np.random / random) to
-match your current CSF traces exactly.
+This replays your single-thread step sequence against the same objects in the same
+order (grow → update → destructors → branching → tip snapshot → time advance → pruning → histories).
+No new RNG calls are introduced; we rely on the exact np.random/random usage in your
+Section.maybe_branch and the pruning step to keep per-step hashes identical.
 
-After we confirm hashes match, we'll parallelise safe phases (e.g., the
-per-section grow/update and branch decision *proposal* stage) while
-keeping a single-writer, stable-order merge.
-
-Nothing here mutates global state outside the intended, CSF-like sequence.
+Phase 2 (after we confirm hash equality): refactor this into
+snapshot → propose → stable-merge to enable parallelism without changing hashes.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple, Optional
-import os
-import random
+from typing import Any, Dict, List, Optional
 import numpy as np
+import logging
 
 from core.section import Section
 from core.options import Options
-from core.point import MPoint  # only for type hints
+from core.point import MPoint  # only for annotations/log formatting
 
-# ---- Proposal API (kept for Phase 2; unused in Phase 1) ---------------------
-
-OP_UPDATE_SECTION = 1
-OP_CREATE_BRANCH  = 2
-OP_KILL_SECTION   = 3
-
-@dataclass(frozen=True)
-class Proposal:
-    apply_key: Tuple[int, int]        # (csf_order_key, section_id)
-    op: int                           # one of OP_*
-    payload_idx: Optional[int]        # index into payloads list for data (None if unused)
-    target_id: Optional[int]          # section id target (if applicable)
-
-@dataclass
-class Snapshot:
-    ids: List[int]
-    is_tip: List[bool]
-    is_dead: List[bool]
-
-# -----------------------------------------------------------------------------
-
-def _effective_seed(opts: Options, master_seed: Optional[int]) -> int:
-    s = master_seed if master_seed is not None else getattr(opts, "seed", None)
-    return 0 if s is None else int(s)
+logger = logging.getLogger("pycelium.parallel.engine")
 
 class ParallelStepEngine:
     """
-    Deterministic engine that mirrors Mycel.step() exactly (Phase 1).
-    After validation against your hash oracle, we'll enable parallel
-    proposal computation in Phase 2.
+    Phase 1: exact behavior transplant of Mycel.step(), no delegation.
     """
+
     def __init__(self, apply_order: str = "id", workers: int = 0):
+        # (apply_order/workers are for Phase 2; unused in this faithful mirror)
         self.apply_order = apply_order
         self.workers = int(workers)
 
-    # --- Phase 1: direct, behaviour-identical step implementation ---
+    # --- helpers (mirrors mycel.get_tips to keep this file self-contained) ---
+    def _get_tips(self, mycel):
+        return [s for s in mycel.sections if s.is_tip and not s.is_dead]
 
-    def step_parallel_equivalent(self, mycel, components: Dict[str, Any], step: int, master_seed: Optional[int]) -> None:
+    # --- faithful step implementation ----------------------------------------
+    def step_parallel_equivalent(
+        self,
+        mycel,
+        components: Dict[str, Any],
+        step: int,
+        master_seed: Optional[int],  # kept for Phase 2; unused here
+    ) -> None:
         """
-        EXACT mirror of core/mycel.py::Mycel.step(), using the same loops,
-        order, RNG calls, and side-effects — so per-step hashes remain identical.
+        EXACT mirror of core/mycel.py::Mycel.step(), using your uploaded code.
         """
+
         opts: Options = components["opts"]
-
-        # Keep RNG usage identical to CSF run
-        # (We seed once at simulation setup; here we just use np.random/random
-        #  exactly as in Mycel.step(), so the draw sequence matches.)
         new_sections: List[Section] = []
 
-        # Diagnostic parity with your Mycel.step (optional)
-        # logger.debug("STEP START: t=%.2f | total_sections=%d", mycel.time, len(mycel.sections))
+        # Step start (debug-only, matches your logging)
+        logger.debug("STEP START: t=%.2f | total_sections=%d", mycel.time, len(mycel.sections))
 
-        tip_count = len([s for s in mycel.sections if s.is_tip and not s.is_dead])
+        # Count active tips BEFORE growth (this is passed to maybe_branch)
+        tip_count = len(self._get_tips(mycel))
 
         # 1) Grow & update existing sections (same list order)
         for section in mycel.sections:
             if section.is_dead:
                 continue
+            # Grow by growth_rate over time_step
             section.grow(opts.growth_rate, opts.time_step)
+            # Update internal state (e.g., exact length recompute)
             section.update()
+            # Debug trace for living tips
+            if section.is_tip and not section.is_dead:
+                logger.debug("TIP pos=%s len=%.2f age=%.2f", section.end, section.length, section.age)
 
-        # 2) Destructor logic: age, length, density, nutrient, isolation
+        # 2) Destructor logic: check *alive tips* only
         for section in mycel.sections:
             if not section.is_tip or section.is_dead:
                 continue
 
-            # A) age
-            if getattr(opts, "die_if_old", False) and section.age > opts.max_age:
+            # A) age limit
+            if opts.die_if_old and section.age > opts.max_age:
                 section.is_dead = True
+                logger.debug("Tip died of age: age=%.2f > max_age=%.2f", section.age, opts.max_age)
                 continue
 
-            # B) length
+            # B) length limit
             if section.length > opts.max_length:
                 section.is_dead = True
+                logger.debug("Tip died of length: len=%.2f > max_len=%.2f", section.length, opts.max_length)
                 continue
 
-            # C) density (uses field_aggregator if present)
-            if getattr(opts, "die_if_too_dense", False) and section.field_aggregator:
+            # C) density kill (if aggregator present)
+            if opts.die_if_too_dense and section.field_aggregator:
                 density = section.field_aggregator.compute_field(section.end)[0]
                 if density > opts.density_threshold:
+                    logger.debug("Density kill: %.3f > threshold %.3f", density, opts.density_threshold)
                     section.is_dead = True
                     continue
 
             # D) nutrient repulsion kill
-            if getattr(opts, "use_nutrient_field", False) and section.field_aggregator:
+            if opts.use_nutrient_field and section.field_aggregator:
                 nutrient_field = section.field_aggregator.compute_field(section.end)[0]
-                if nutrient_field < -abs(getattr(opts, "nutrient_repulsion", 0.0)):
+                if nutrient_field < -abs(opts.nutrient_repulsion):
+                    logger.debug(
+                        "Repellent kill: nutrient_field=%.3f < -|repulsion|=%.3f",
+                        nutrient_field, abs(opts.nutrient_repulsion)
+                    )
                     section.is_dead = True
                     continue
 
-            # E) isolation
+            # E) isolation (neighbour count within radius)
             if section.field_aggregator:
                 nearby_count = 0
-                # neighbour check only among *current* tips
-                for other in [s for s in mycel.sections if s.is_tip and not s.is_dead]:
+                for other in self._get_tips(mycel):
                     if other is section:
                         continue
                     if section.end.distance_to(other.end) <= opts.neighbour_radius:
                         nearby_count += 1
                 if nearby_count < opts.min_supported_tips:
+                    logger.debug(
+                        "Isolation kill: neighbours=%d < min_supported=%d",
+                        nearby_count, opts.min_supported_tips
+                    )
                     section.is_dead = True
                     continue
 
-        # 3) Branching
+        # Optional log of last-checked section (exactly as in your code)
+        try:
+            logger.debug(
+                "Post-destruction sample tip: pos=%s is_tip=%s is_dead=%s",
+                section.end, section.is_tip, section.is_dead
+            )
+        except UnboundLocalError:
+            pass
+
+        # 3) Branching: tips (or internal if allowed)
         for section in mycel.sections:
             if section.is_dead:
                 continue
             if section.is_tip or opts.allow_internal_branching:
                 child = section.maybe_branch(opts.branch_probability, tip_count=tip_count)
                 if child:
+                    logger.debug("BRANCHED: %s → %s", section.end, child.orientation)
                     new_sections.append(child)
 
+        # Add newly created sections
         if new_sections:
-            mycel.sections.extend(new_sections)
+            logger.debug("Added %d new sections this step", len(new_sections))
+        mycel.sections.extend(new_sections)
 
-        # 4) Record tip snapshot (positions and metrics)
+        # 4) Snapshot of current tips (positions & metrics) at current time
         step_snapshot = [
             {
                 "time": mycel.time,
@@ -151,45 +155,33 @@ class ParallelStepEngine:
                 "age": tip.age,
                 "length": tip.length,
             }
-            for tip in [s for s in mycel.sections if s.is_tip and not s.is_dead]
+            for tip in self._get_tips(mycel)
         ]
         mycel.time_series.append(step_snapshot)
 
         # Advance time
         mycel.time += opts.time_step
 
-        # 5) Pruning by max_supported_tips
+        # 5) Optional pruning by max_supported_tips
         if hasattr(opts, "max_supported_tips") and opts.max_supported_tips > 0:
-            active_tips = [s for s in mycel.sections if s.is_tip and not s.is_dead]
+            active_tips = self._get_tips(mycel)
             if len(active_tips) > opts.max_supported_tips:
+                logger.info(
+                    "Tip pruning: %d tips exceed max (%d) → pruning",
+                    len(active_tips), opts.max_supported_tips
+                )
                 excess = len(active_tips) - opts.max_supported_tips
                 to_prune = np.random.choice(active_tips, size=excess, replace=False)
                 for tip in to_prune:
                     tip.is_dead = True
+                    logger.debug("Pruned tip at %s due to overcrowding", tip.end)
 
-        # 6) Update histories / biomass
-        tip_data = [(tip.end.coords[0], tip.end.coords[1], tip.end.coords[2])
-                    for tip in [s for s in mycel.sections if s.is_tip and not s.is_dead]]
+        # 6) Update history and biomass
+        tip_data = [
+            (tip.end.coords[0], tip.end.coords[1], tip.end.coords[2])
+            for tip in self._get_tips(mycel)
+        ]
         mycel.step_history.append((mycel.time, tip_data))
         total_biomass = sum(sec.length for sec in mycel.sections if not sec.is_dead)
         mycel.biomass_history.append(total_biomass)
-
-    # --- Phase 2 scaffolding (kept for later parallelisation) ----------------
-
-    def compute_proposals(
-        self,
-        mycel,
-        snapshot: Snapshot,
-        opts: Options,
-        step: int,
-        section_ids: List[int],
-    ) -> Tuple[List[Proposal], List[Any]]:
-        """
-        Placeholder for Phase 2: order-independent proposal generation.
-        In Phase 1 we do a direct, mirrored step (above).
-        """
-        return [], []
-
-    def _apply_proposal(self, mycel, opts: Options, prop: Proposal, payload: Any) -> None:
-        # Phase 2 only
-        pass
+        logger.debug("STEP END: active_tips=%d | biomass=%.2f", len(self._get_tips(mycel)), total_biomass)
