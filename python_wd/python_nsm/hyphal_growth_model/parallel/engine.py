@@ -71,16 +71,9 @@ class ParallelStepEngine:
         """
         if not tips:
             return
-        if use_threads and len(tips) > 1:
-            with ThreadPoolExecutor(max_workers=self.workers) as ex:
-                # Compute in parallel; executor.map preserves input order
-                new_orients = list(ex.map(orientator.compute, tips))
-            # Assign back in the same deterministic order
-            for tip, ori in zip(tips, new_orients):
-                tip.orientation = ori
-        else:
-            for tip in tips:
-                tip.orientation = orientator.compute(tip)
+        # Force serial for exact match
+        for tip in tips:
+            tip.orientation = orientator.compute(tip)
 
     def step_parallel_equivalent(
         self,
