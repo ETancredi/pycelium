@@ -48,13 +48,12 @@ def run_direct(opts_path, steps):
     return hashes
 
 def run_scaffold(opts_path, steps):
-    # Independent Options instance + deterministic seeding
     opts = load_options_from_json(opts_path)
     seed = _effective_seed(opts)
     _seed_globals(seed)
     _reset_section_id_counter()
     mycel, components = runner.setup_simulation(opts)
-    engine = ParallelStepEngine(workers=0)  # serial proposals for now
+    engine = ParallelStepEngine(workers=4)  # <-- was 0
     hashes = []
     for step in range(steps):
         engine.step_parallel_equivalent(mycel, components, step, master_seed=seed)
