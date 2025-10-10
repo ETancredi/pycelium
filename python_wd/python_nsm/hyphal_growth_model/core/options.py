@@ -129,3 +129,6 @@ class Options:
     # Anisotropy plots (only considered when opts.anisotropy_enabled is True)
     generate_anisotropy_2d_png: bool = True
     generate_anisotropy_3d_png: bool = True
+    
+    parallel_processing_mode: bool = False
+    parallel_workers: int = 4
