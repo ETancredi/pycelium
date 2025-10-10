@@ -15,6 +15,10 @@ def load_options_from_json(path: str) -> Options:
     """
     with open(path, "r") as f: # Open the specified JSON file for reading
         data = json.load(f) # Parse the JSOn into a Python dict
+
+    data.setdefault("parallel_processing_mode", False)
+    data.setdefault("parallel_workers", 4)
+    
     return Options(**data) # Unpack the dict into the Options dataclass and return
 
 def load_options_from_cli() -> Options:
