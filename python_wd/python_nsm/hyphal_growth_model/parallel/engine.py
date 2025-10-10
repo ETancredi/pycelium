@@ -30,8 +30,6 @@ from core.section import Section
 
 logger = logging.getLogger("pycelium.parallel.engine")
 
-# --- Proposal kinds (execution still calls your original methods) ------------
-
 OP_GROW_UPDATE    = 0
 OP_DESTRUCT_CHECK = 1
 OP_BRANCH_ATTEMPT = 2
@@ -47,7 +45,6 @@ class Snapshot:
     ids: List[int]
 
 def _take_snapshot(sections: List[Section]) -> Snapshot:
-    # canonical order: by creation id (matches your iteration order)
     ids = [int(s.id) for s in sections]
     return Snapshot(ids=ids)
 
@@ -65,13 +62,8 @@ class ParallelStepEngine:
                 return s
         return None
 
-    def _compute_orientations(self, tips, orientator, use_threads: bool):
-        """
-        Compute orientations for tips, preserving deterministic assignment order.
-        """
-        if not tips:
-            return
-        # Force serial for exact match
+    def _compute_orientations_serial(self, tips, orientator):
+        # Force serial for exact byte-for-byte equality
         for tip in tips:
             tip.orientation = orientator.compute(tip)
 
@@ -80,118 +72,165 @@ class ParallelStepEngine:
         mycel,
         components: Dict[str, Any],
         step: int,
-        master_seed: Optional[int],   # reserved for future addressable RNG
+        master_seed: Optional[int],
     ) -> None:
-        """
-        EXACT behavior match, with parallelised orientator phase when workers > 1.
-        """
-        # ---- Unpack components (matches main.py) ----
         aggregator   = components["aggregator"]
         grid         = components["grid"]
         orientator   = components["orientator"]
         checkpoints  = components["checkpoints"]
-        autostop     = components["autostop"]  # used outside in simulate()
+        autostop     = components["autostop"]
         mutator      = components["mutator"]
         stats        = components["stats"]
         opts: Options = components["opts"]
 
-        # ---- Pre-step wrapper (field refresh) ----
+        # Pre-step wrapper (field refresh)
         aggregator.sources.clear()
         aggregator.add_sections(mycel.get_all_segments(), strength=1.0, decay=1.5)
 
-        # ---- Parallelised orientator pass (pure, RNG-free) ----
-        tips = mycel.get_tips()  # capture deterministic order
-        self._compute_orientations(tips, orientator, use_threads=(self.workers > 1))
+        # Orientations (kept serial to preserve RNG/side-effects in Orientator)
+        tips_for_orient = mycel.get_tips()
+        self._compute_orientations_serial(tips_for_orient, orientator)
 
-        # ---- Snapshot current state (for structure; not used in RNG) ----
+        # Snapshot for ordered iteration
         snap = _take_snapshot(mycel.sections)
 
-        # ---- Ordered proposals (no RNG here) ----
+        # Build ordered proposals
         proposals: List[Proposal] = []
         proposals.extend(Proposal((0, sid), OP_GROW_UPDATE, sid) for sid in snap.ids)
         proposals.extend(Proposal((1, sid), OP_DESTRUCT_CHECK, sid) for sid in snap.ids)
         proposals.extend(Proposal((2, sid), OP_BRANCH_ATTEMPT, sid) for sid in snap.ids)
         proposals.sort(key=lambda p: p.apply_key)
 
-        # ---- Single-writer merge (exact side effects, original order) ----
+        # ---- Merge: pass 0 (grow/update) ----
         logger.debug("STEP START: t=%.2f | total_sections=%d", mycel.time, len(mycel.sections))
         new_sections: List[Section] = []
-        tip_count_pre = len(self._get_tips(mycel))
-
         for prop in proposals:
+            if prop.op != OP_GROW_UPDATE:
+                continue
             s = self._by_id(mycel, prop.section_id)
-            if s is None:
+            if s is None or s.is_dead:
+                continue
+            s.grow(opts.growth_rate, opts.time_step)
+            s.update()
+            if s.is_tip and not s.is_dead:
+                logger.debug("TIP pos=%s len=%.2f age=%.2f", s.end, s.length, s.age)
+
+        # ---- NEW: threaded precompute of fields for destructor checks ----
+        # We precompute AFTER grow/update (to match end-positions used in the checks).
+        # No RNG here; compute_field should be pure w.r.t. current sources.
+        need_density  = bool(getattr(opts, "die_if_too_dense", False))
+        need_nutrient = bool(getattr(opts, "use_nutrient_field", False) and getattr(opts, "nutrient_repulsion", 0) != 0)
+
+        # only consider current tips (alive) at this point
+        current_tips = self._get_tips(mycel)
+        tip_sids     = [int(t.id) for t in current_tips]
+
+        density_map: Dict[int, float] = {}
+        nutrient_map: Dict[int, float] = {}
+
+        def _field_at_end(tip: Section) -> float:
+            return tip.field_aggregator.compute_field(tip.end)[0] if tip.field_aggregator else 0.0
+
+        if self.workers > 1 and (need_density or need_nutrient) and len(current_tips) > 0:
+            with ThreadPoolExecutor(max_workers=self.workers) as ex:
+                values = list(ex.map(_field_at_end, current_tips))
+            # fill maps as requested
+            for sid, val in zip(tip_sids, values):
+                if need_density:
+                    density_map[sid] = val
+                if need_nutrient:
+                    nutrient_map[sid] = val
+        else:
+            # serial fallback
+            for tip in current_tips:
+                val = _field_at_end(tip)
+                sid = int(tip.id)
+                if need_density:
+                    density_map[sid] = val
+                if need_nutrient:
+                    nutrient_map[sid] = val
+
+        # ---- Merge: pass 1 (destructor checks) ----
+        for prop in proposals:
+            if prop.op != OP_DESTRUCT_CHECK:
+                continue
+            s = self._by_id(mycel, prop.section_id)
+            if s is None or not s.is_tip or s.is_dead:
                 continue
 
-            if prop.op == OP_GROW_UPDATE:
-                if s.is_dead:
-                    continue
-                s.grow(opts.growth_rate, opts.time_step)
-                s.update()
-                if s.is_tip and not s.is_dead:
-                    logger.debug("TIP pos=%s len=%.2f age=%.2f", s.end, s.length, s.age)
+            # A) age
+            if opts.die_if_old and s.age > opts.max_age:
+                s.is_dead = True
+                logger.debug("Tip died of age: age=%.2f > max_age=%.2f", s.age, opts.max_age)
+                continue
 
-            elif prop.op == OP_DESTRUCT_CHECK:
-                if not s.is_tip or s.is_dead:
-                    continue
-                if opts.die_if_old and s.age > opts.max_age:
+            # B) length
+            if s.length > opts.max_length:
+                s.is_dead = True
+                logger.debug("Tip died of length: len=%.2f > max_len=%.2f", s.length, opts.max_length)
+                continue
+
+            # C) density (use precomputed value if requested)
+            if need_density and s.field_aggregator:
+                dens = density_map.get(int(s.id), s.field_aggregator.compute_field(s.end)[0])
+                if dens > opts.density_threshold:
+                    logger.debug("Density kill: %.3f > threshold %.3f", dens, opts.density_threshold)
                     s.is_dead = True
-                    logger.debug("Tip died of age: age=%.2f > max_age=%.2f", s.age, opts.max_age)
                     continue
-                if s.length > opts.max_length:
+
+            # D) nutrient repulsion (use precomputed value if requested)
+            if need_nutrient and s.field_aggregator:
+                nf = nutrient_map.get(int(s.id), s.field_aggregator.compute_field(s.end)[0])
+                if nf < -abs(opts.nutrient_repulsion):
+                    logger.debug(
+                        "Repellent kill: nutrient_field=%.3f < -|repulsion|=%.3f",
+                        nf, abs(opts.nutrient_repulsion)
+                    )
                     s.is_dead = True
-                    logger.debug("Tip died of length: len=%.2f > max_len=%.2f", s.length, opts.max_length)
                     continue
-                if opts.die_if_too_dense and s.field_aggregator:
-                    density = s.field_aggregator.compute_field(s.end)[0]
-                    if density > opts.density_threshold:
-                        logger.debug("Density kill: %.3f > threshold %.3f", density, opts.density_threshold)
-                        s.is_dead = True
-                        continue
-                if opts.use_nutrient_field and s.field_aggregator:
-                    nutrient_field = s.field_aggregator.compute_field(s.end)[0]
-                    if nutrient_field < -abs(opts.nutrient_repulsion):
-                        logger.debug(
-                            "Repellent kill: nutrient_field=%.3f < -|repulsion|=%.3f",
-                            nutrient_field, abs(opts.nutrient_repulsion)
-                        )
-                        s.is_dead = True
-                        continue
-                if s.field_aggregator:
-                    nearby = 0
-                    for other in self._get_tips(mycel):
-                        if other is s:
-                            continue
-                        if s.end.distance_to(other.end) <= opts.neighbour_radius:
-                            nearby += 1
-                    if nearby < opts.min_supported_tips:
-                        logger.debug(
-                            "Isolation kill: neighbours=%d < min_supported=%d",
-                            nearby, opts.min_supported_tips
-                        )
-                        s.is_dead = True
-                        continue
 
-            elif prop.op == OP_BRANCH_ATTEMPT:
-                if s.is_dead:
+            # E) isolation (left serial & live against current tips to preserve dynamics)
+            if s.field_aggregator:
+                nearby = 0
+                for other in self._get_tips(mycel):
+                    if other is s:
+                        continue
+                    if s.end.distance_to(other.end) <= opts.neighbour_radius:
+                        nearby += 1
+                if nearby < opts.min_supported_tips:
+                    logger.debug(
+                        "Isolation kill: neighbours=%d < min_supported=%d",
+                        nearby, opts.min_supported_tips
+                    )
+                    s.is_dead = True
                     continue
-                if s.is_tip or opts.allow_internal_branching:
-                    child = s.maybe_branch(opts.branch_probability, tip_count=tip_count_pre)
-                    if child:
-                        logger.debug("BRANCHED: %s → %s", s.end, child.orientation)
-                        new_sections.append(child)
 
+        # Post-destruction sample log (unchanged)
         try:
             logger.debug("Post-destruction sample tip: pos=%s is_tip=%s is_dead=%s",
                          s.end, s.is_tip, s.is_dead)
         except UnboundLocalError:
             pass
 
+        # ---- Merge: pass 2 (branch attempts; RNG lives here) ----
+        tip_count_pre = len(self._get_tips(mycel))  # as in the previous version
+        for prop in proposals:
+            if prop.op != OP_BRANCH_ATTEMPT:
+                continue
+            s = self._by_id(mycel, prop.section_id)
+            if s is None or s.is_dead:
+                continue
+            if s.is_tip or opts.allow_internal_branching:
+                child = s.maybe_branch(opts.branch_probability, tip_count=tip_count_pre)
+                if child:
+                    logger.debug("BRANCHED: %s → %s", s.end, child.orientation)
+                    new_sections.append(child)
+
         if new_sections:
             logger.debug("Added %d new sections this step", len(new_sections))
         mycel.sections.extend(new_sections)
 
-        # ---- End-of-step: snapshot → time → prune → histories (unchanged) ----
+        # ---- End-of-step unchanged: snapshot → time → prune → histories ----
         step_snapshot = [
             {
                 "time": mycel.time,
@@ -225,17 +264,15 @@ class ParallelStepEngine:
             for tip in self._get_tips(mycel)
         ]
         mycel.step_history.append((mycel.time, tip_data))
-        total_biomass = sum(sec.length for sec in mycel.sections if not sec.is_dead)
+        total_biomass = sum(sec.length for sec in mycel.sections if not s.is_dead)
         mycel.biomass_history.append(total_biomass)
         logger.debug("STEP END: active_tips=%d | biomass=%.2f", len(self._get_tips(mycel)), total_biomass)
 
-        # ---- Post-step wrapper (as main.step_simulation) ----
+        # Post-step wrapper (as in main.step_simulation)
         grid.update_from_mycel(mycel)
-
         if getattr(opts, "use_nutrient_field", False) and getattr(opts, "nutrient_repulsion", 0) > 0:
             if hasattr(mycel, "nutrient_kill_check"):
                 mycel.nutrient_kill_check()
-
         mutator.apply(step, opts)
         checkpoints.maybe_save(mycel, step)
         stats.update(mycel)
