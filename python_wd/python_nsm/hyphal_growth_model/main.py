@@ -296,42 +296,63 @@ def generate_outputs(mycel, components, output_dir="outputs"):
     if opts.generate_obj_mesh:
         export_to_obj(mycel, f"{output_dir}/mycelium.obj")
 
-def simulate(opts, steps=120):
+# main.py (imports unchanged, plus the earlier ParallelStepEngine try/except)
+
+def simulate(opts, steps=120, use_parallel=None, workers=None):
     """
-    Top-level function to run a full sim loop, handle autostop, and then call generate_outputs at the end.
+    Run the sim loop. If use_parallel is None, read from opts.parallel_processing_mode.
+    If workers is None, read from opts.parallel_workers.
     """
-    # Initialise sim and components
+    # Resolve flags from options if not provided
+    if use_parallel is None:
+        use_parallel = bool(getattr(opts, "parallel_processing_mode", False))
+    if workers is None:
+        workers = int(getattr(opts, "parallel_workers", 4))
+
     mycel, components = setup_simulation(opts)
 
-    # Rate-limited heartbeat (visible when PYCELIUM_LOG_LEVEL=INFO)
+    engine = None
+    if use_parallel:
+        if ParallelStepEngine is None:
+            raise RuntimeError("ParallelStepEngine not available.")
+        engine = ParallelStepEngine(workers=int(workers))
+
     log_every = parse_int_env("PYCELIUM_LOG_EVERY", 50)
 
     try:
-        # Loop for the requested no. steps
         for step in range(steps):
-            step_simulation(mycel, components, step)
+            if engine is None:
+                step_simulation(mycel, components, step)
+            else:
+                engine.step_parallel_equivalent(
+                    mycel, components, step, master_seed=getattr(opts, "seed", None)
+                )
 
-            # Heartbeat only every N steps; keep it lightweight
             if log_every > 0 and (step % log_every) == 0:
                 logger.info(f"step {step} | tips={len(mycel.get_tips())} | sections={len(mycel.get_all_segments())}")
 
-            # Check AutoStop condition
             if components["autostop"].check(mycel, step):
                 logger.info("AutoStop triggered; terminating early.")
                 break
-
     except KeyboardInterrupt:
-        # Allow user to interrupt simulation with Ctrl+C and still save results
         logger.warning("Interrupted by user. Saving final state...")
 
-    # Determine final output folder (env takes precedence in all modes)
     output_dir = os.getenv("BATCH_OUTPUT_DIR", "outputs")
     logger.info(f"Saving outputs to: {output_dir}")
-    generate_outputs(mycel, components, output_dir=output_dir)  # Generate all plots and exports
-
+    generate_outputs(mycel, components, output_dir=output_dir)
     print("✅ Simulation completed")
 
+
 if __name__ == "__main__":
-    # If run directly, load a default config and simulate
-    opts = load_options_from_json("configs/example.json")
-    simulate(opts, steps=120)
+    opts = load_options_from_json("config/param_config.json")
+
+    # env can still override, else fall back to opts
+    use_parallel_env = os.getenv("PYCELIUM_PARALLEL", "").strip()
+    workers_env = os.getenv("PYCELIUM_WORKERS", "").strip()
+    steps_env = os.getenv("PYCELIUM_STEPS", "").strip()
+
+    use_parallel = (use_parallel_env.lower() in ("1", "true", "yes")) if use_parallel_env else None
+    workers = int(workers_env) if workers_env else None
+    steps = int(steps_env) if steps_env else 120
+
+    simulate(opts, steps=steps, use_parallel=use_parallel, workers=workers)
