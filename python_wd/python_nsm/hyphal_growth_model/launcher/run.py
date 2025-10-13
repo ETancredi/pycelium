@@ -20,12 +20,45 @@ def run_gui():
     OptionGUI()  # Instantiate the GUI, which calls mainloop internally
 
 
-def run_cli(config=None, steps=None):
+def _resolve_parallel_flags(opts, cli_parallel, cli_workers):
+    """
+    Determine final (use_parallel, workers) with the following priority:
+      CLI flag > ENV > Options (config) > defaults
+    """
+    # use_parallel
+    use_parallel = None
+    if cli_parallel is True:
+        use_parallel = True
+    else:
+        env_flag = os.getenv("PYCELIUM_PARALLEL", "").strip()
+        if env_flag:
+            use_parallel = env_flag.lower() in ("1", "true", "yes")
+        else:
+            # fall back to options (may be missing)
+            use_parallel = bool(getattr(opts, "parallel_processing_mode", False))
+
+    # workers
+    workers = None
+    if cli_workers is not None:
+        workers = int(cli_workers)
+    else:
+        env_workers = os.getenv("PYCELIUM_WORKERS", "").strip()
+        if env_workers:
+            workers = int(env_workers)
+        else:
+            workers = int(getattr(opts, "parallel_workers", 4))
+
+    return use_parallel, workers
+
+
+def run_cli(config=None, steps=None, parallel=None, workers=None):
     """
     Run the simulator in CLI (command-line) mode.
     Args:
         config (str or None): Path to a JSON file defining Options
         steps (int or None): No. sim steps to override.
+        parallel (bool or None): Force parallel if True, else fall back to env/opts.
+        workers (int or None): Force worker count if provided, else env/opts.
     """
     print("🧬 Running standard simulation...")
     if config:
@@ -35,19 +68,27 @@ def run_cli(config=None, steps=None):
         # Load opts and steps from CLI flags (prompts user or uses defaults)
         opts, steps = load_options_from_cli()
 
-    # --- NEW: resolve seed & set RNGs consistently across CLI/GUI/Batch ---
+    # --- Resolve parallel flags (CLI > ENV > opts) ---
+    use_parallel, resolved_workers = _resolve_parallel_flags(opts, parallel, workers)
+
+    # --- Resolve steps: CLI > ENV > default(120) ---
+    if steps is None:
+        steps_env = os.getenv("PYCELIUM_STEPS", "").strip()
+        steps = int(steps_env) if steps_env else 120
+
+    # --- Resolve seed & set RNGs consistently across CLI/GUI/Batch ---
     seed = resolve_seed(getattr(opts, "seed", None))
     opts.seed = seed
     random.seed(seed)
     np.random.seed(seed)
 
-    # --- NEW: create unique per-run folder & inform downstream via env var ---
+    # --- Create unique per-run folder & inform downstream via env var ---
     run_dir = compute_run_dir("outputs", seed)  # e.g., outputs/20250925_1_123456789
     os.environ["BATCH_OUTPUT_DIR"] = str(run_dir)
     print(f"📂 Outputs will be written to: {run_dir} (seed={seed})")
 
-    # Run the sim with loaded opts and steps (default 120)
-    simulate(opts, steps or 120)
+    # Run the sim with loaded opts and resolved flags
+    simulate(opts, steps, use_parallel=use_parallel, workers=resolved_workers)
 
 
 def run_sweep(param, values, steps):
@@ -70,7 +111,8 @@ def parse_args():
     Define and parse command-line args for this launcher.
     Returns:
         Namespace: Parsed args w/ attributes:
-            mode, config, steps, sweep_param, sweep_values, sweep_steps
+            mode, config, steps, sweep_param, sweep_values, sweep_steps,
+            parallel, workers
     """
     parser = argparse.ArgumentParser(description="Launch the Hyphal Growth Simulator")
     # Mode selection: gui, cli, or sweep
@@ -79,6 +121,13 @@ def parse_args():
     parser.add_argument("--config", type=str, help="Path to JSON config")
     # Optional override for no. steps
     parser.add_argument("--steps", type=int, help="Override number of steps")
+
+    # --- NEW: parallel controls (optional; keeps old command intact) ---
+    parser.add_argument("--parallel", "-p", action="store_true",
+                        help="Enable deterministic parallel stepping (overrides env/opts)")
+    parser.add_argument("--workers", "-w", type=int, default=None,
+                        help="Number of parallel workers (overrides env/opts)")
+
     # For sweep mode: name of param to vary
     parser.add_argument("--sweep_param", type=str, help="Param to sweep (e.g. branch_probability)")
     # For sweep mode: list of values to test
@@ -97,8 +146,8 @@ if __name__ == "__main__":
         run_gui()
 
     elif args.mode == "cli":
-        # CLI mode: pass config path and steps override
-        run_cli(config=args.config, steps=args.steps)
+        # CLI mode: pass config path and steps override and (optional) parallel flags
+        run_cli(config=args.config, steps=args.steps, parallel=args.parallel, workers=args.workers)
 
     elif args.mode == "sweep":
         # Sweep mode: require both parameter name and values
