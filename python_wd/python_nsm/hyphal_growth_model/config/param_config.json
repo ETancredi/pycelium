@@ -106,5 +106,5 @@
 
   "parallel_processing_mode": true,
   "parallel_workers": 4,
-  "parallelise_orientator": true
+  "parallelise_orientator": false
 }
