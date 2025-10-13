@@ -58,9 +58,7 @@ class Orientator:
     def set_nutrient_sources(self, points: List[MPoint]):
         self.nutrient_sources = points  # Set list of nutrient attractor/repellent points
 
-    # ----------------------------------------------------------------------
     # Deterministic entrypoint for parallel-safe orientation computation
-    # ----------------------------------------------------------------------
     def compute_deterministic(self, section: Section, *, step: int, master_seed: Optional[int]) -> MPoint:
         """
         Deterministic, thread-safe orientation compute:
@@ -73,10 +71,8 @@ class Orientator:
         rng = Generator(PCG64(seed64))
         return self._compute_with_rng(section, rng)
 
-    # ----------------------------------------------------------------------
     # Internal helper that mirrors `compute()` but uses a provided RNG.
     # All stochastic draws MUST come from `rng` (no np.random/random).
-    # ----------------------------------------------------------------------
     def _compute_with_rng(self, section: Section, rng: Generator) -> MPoint:
         opts = self.options
         orientation = section.orientation.copy()  # Start w/ current orientation as a mutable copy
