@@ -52,6 +52,12 @@ class ParallelStepEngine:
     def __init__(self, apply_order: str = "id", workers: int = 0):
         self.apply_order = apply_order
         self.workers = int(workers)
+        self.pool = ThreadedPoolExecutor(max_workers=self.workers) if self.workers > 1 else None
+
+    def shutdown(self):
+      if self.pool is not None:
+          self.pool.shutdown(wait=True)
+          self.pool = None
 
     def _get_tips(self, mycel):
         return [s for s in mycel.sections if s.is_tip and not s.is_dead]
