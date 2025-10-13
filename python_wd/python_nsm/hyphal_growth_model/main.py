@@ -342,17 +342,56 @@ def simulate(opts, steps=120, use_parallel=None, workers=None):
     generate_outputs(mycel, components, output_dir=output_dir)
     print("✅ Simulation completed")
 
-
 if __name__ == "__main__":
-    opts = load_options_from_json("config/param_config.json")
+    import argparse
+    from config.sim_config import load_options_from_json
 
-    # env can still override, else fall back to opts
-    use_parallel_env = os.getenv("PYCELIUM_PARALLEL", "").strip()
-    workers_env = os.getenv("PYCELIUM_WORKERS", "").strip()
-    steps_env = os.getenv("PYCELIUM_STEPS", "").strip()
+    parser = argparse.ArgumentParser(description="Pycelium simulation runner")
+    parser.add_argument(
+        "--config", "-c",
+        default="config/param_config.json",
+        help="Path to simulation config JSON (default: config/param_config.json)"
+    )
+    parser.add_argument(
+        "--steps", "-s",
+        type=int,
+        default=None,  # defer to env or default in simulate() call if None
+        help="Number of steps to run (default: 120, or env PYCELIUM_STEPS)"
+    )
+    parser.add_argument(
+        "--parallel", "-p",
+        action="store_true",
+        help="Enable deterministic parallel stepping (identical hashes)"
+    )
+    parser.add_argument(
+        "--workers", "-w",
+        type=int,
+        default=None,  # defer to opts or env if None
+        help="Number of parallel workers (default: from options or env)"
+    )
 
-    use_parallel = (use_parallel_env.lower() in ("1", "true", "yes")) if use_parallel_env else None
-    workers = int(workers_env) if workers_env else None
-    steps = int(steps_env) if steps_env else 120
+    args = parser.parse_args()
+
+    # Load options
+    opts = load_options_from_json(args.config)
+
+    # Resolve steps: CLI > env > default
+    steps = args.steps
+    if steps is None:
+        steps_env = os.getenv("PYCELIUM_STEPS", "").strip()
+        steps = int(steps_env) if steps_env else 120
+
+    # Determine parallel flags:
+    # Priority order → CLI flag > env > Options
+    use_parallel = args.parallel
+    if not use_parallel:
+        env_flag = os.getenv("PYCELIUM_PARALLEL", "").strip()
+        if env_flag:
+            use_parallel = env_flag.lower() in ("1", "true", "yes")
+
+    workers = args.workers
+    if workers is None:
+        workers_env = os.getenv("PYCELIUM_WORKERS", "").strip()
+        workers = int(workers_env) if workers_env else None  # None → simulate() reads from opts
 
     simulate(opts, steps=steps, use_parallel=use_parallel, workers=workers)
