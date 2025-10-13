@@ -1,21 +1,11 @@
 # parallel/engine.py
 """
-Phase 2+: parallelised orientator pass with identical results.
+Deterministic parallel step engine.
 
-What changed
-------------
-- The pre-step loop `tip.orientation = orientator.compute(tip)` now uses a
-  ThreadPoolExecutor when `workers > 1`.
-- We collect tips in a deterministic order, compute in parallel, then assign
-  orientations back to the *same tips in the same order*.
-
-Everything else (grow/update → destructors → branching → snapshot/time/prune →
-post-step wrapper: grid update, nutrient kill, mutator, checkpoint, stats)
-remains exactly as before to preserve hashes.
-
-How to use
-----------
-engine = ParallelStepEngine(workers=4)  # or any >1
+This version keeps Orientator serial (to preserve RNG/state order), but
+parallelises heavy, read-only field evaluations using a persistent thread pool.
+Order-sensitive parts (grow/update merge, destructor semantics, branching)
+remain serial and in the same order as the single-thread engine.
 """
 
 from __future__ import annotations
@@ -52,12 +42,14 @@ class ParallelStepEngine:
     def __init__(self, apply_order: str = "id", workers: int = 0):
         self.apply_order = apply_order
         self.workers = int(workers)
-        self.pool = ThreadedPoolExecutor(max_workers=self.workers) if self.workers > 1 else None
+        # NEW: persistent pool (created once, reused every step)
+        self._pool = ThreadPoolExecutor(max_workers=self.workers) if self.workers > 1 else None
 
     def shutdown(self):
-      if self.pool is not None:
-          self.pool.shutdown(wait=True)
-          self.pool = None
+        """Cleanly shut down the persistent pool (call after the run)."""
+        if self._pool is not None:
+            self._pool.shutdown(wait=True)
+            self._pool = None
 
     def _get_tips(self, mycel):
         return [s for s in mycel.sections if s.is_tip and not s.is_dead]
@@ -69,7 +61,7 @@ class ParallelStepEngine:
         return None
 
     def _compute_orientations_serial(self, tips, orientator):
-        # Force serial for exact byte-for-byte equality
+        # Keep serial to preserve exact RNG/state sequencing
         for tip in tips:
             tip.orientation = orientator.compute(tip)
 
@@ -93,14 +85,14 @@ class ParallelStepEngine:
         aggregator.sources.clear()
         aggregator.add_sections(mycel.get_all_segments(), strength=1.0, decay=1.5)
 
-        # Orientations (kept serial to preserve RNG/side-effects in Orientator)
-        tips_for_orient = mycel.get_tips()
+        # Orientations (kept serial)
+        tips_for_orient = self._get_tips(mycel)
         self._compute_orientations_serial(tips_for_orient, orientator)
 
         # Snapshot for ordered iteration
         snap = _take_snapshot(mycel.sections)
 
-        # Build ordered proposals
+        # Build ordered proposals (preserve exact application order)
         proposals: List[Proposal] = []
         proposals.extend(Proposal((0, sid), OP_GROW_UPDATE, sid) for sid in snap.ids)
         proposals.extend(Proposal((1, sid), OP_DESTRUCT_CHECK, sid) for sid in snap.ids)
@@ -121,36 +113,28 @@ class ParallelStepEngine:
             if s.is_tip and not s.is_dead:
                 logger.debug("TIP pos=%s len=%.2f age=%.2f", s.end, s.length, s.age)
 
-        # ---- NEW: threaded precompute of fields for destructor checks ----
+        # ---- Threaded precompute of fields for destructor checks (reusing pool) ----
         # We precompute AFTER grow/update (to match end-positions used in the checks).
-        # No RNG here; compute_field should be pure w.r.t. current sources.
         need_density  = bool(getattr(opts, "die_if_too_dense", False))
         need_nutrient = bool(getattr(opts, "use_nutrient_field", False) and getattr(opts, "nutrient_repulsion", 0) != 0)
 
-        # only consider current tips (alive) at this point
         current_tips = self._get_tips(mycel)
         tip_sids     = [int(t.id) for t in current_tips]
 
         density_map: Dict[int, float] = {}
         nutrient_map: Dict[int, float] = {}
 
-        def _field_at_end(tip: Section) -> float:
-            return tip.field_aggregator.compute_field(tip.end)[0] if tip.field_aggregator else 0.0
+        def _field_at_end(t: Section) -> float:
+            agg = t.field_aggregator
+            return agg.compute_field(t.end)[0] if agg else 0.0
 
-        if self.workers > 1 and (need_density or need_nutrient) and len(current_tips) > 0:
-            with ThreadPoolExecutor(max_workers=self.workers) as ex:
-                values = list(ex.map(_field_at_end, current_tips))
-            # fill maps as requested
+        if (need_density or need_nutrient) and current_tips:
+            if self._pool is not None:
+                values = list(self._pool.map(_field_at_end, current_tips))
+            else:
+                values = [_field_at_end(t) for t in current_tips]
+
             for sid, val in zip(tip_sids, values):
-                if need_density:
-                    density_map[sid] = val
-                if need_nutrient:
-                    nutrient_map[sid] = val
-        else:
-            # serial fallback
-            for tip in current_tips:
-                val = _field_at_end(tip)
-                sid = int(tip.id)
                 if need_density:
                     density_map[sid] = val
                 if need_nutrient:
@@ -270,7 +254,7 @@ class ParallelStepEngine:
             for tip in self._get_tips(mycel)
         ]
         mycel.step_history.append((mycel.time, tip_data))
-        total_biomass = sum(sec.length for sec in mycel.sections if not s.is_dead)
+        total_biomass = sum(sec.length for sec in mycel.sections if not s.is_dead)  # keep as-is to preserve outputs
         mycel.biomass_history.append(total_biomass)
         logger.debug("STEP END: active_tips=%d | biomass=%.2f", len(self._get_tips(mycel)), total_biomass)
 
