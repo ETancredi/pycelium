@@ -136,3 +136,4 @@ class Options:
     
     parallel_processing_mode: bool = False
     parallel_workers: int = 4
+    parallelise_orientator: bool = False
