@@ -103,6 +103,10 @@ class Options:
     # Reproducibility
     seed: Optional[int] = None # Fixed seed for reproducible simulation runs, but made optional so we can omit if we want multiple reps
 
+    # Generate checkpoints
+    generate_checkpoints: bool = True
+    steps_between_checkpoints: int = 20
+    
     # Output toggles (all True by default)
     generate_biomass_and_tips_history: bool = True
     generate_branching_angles_png: bool = True
