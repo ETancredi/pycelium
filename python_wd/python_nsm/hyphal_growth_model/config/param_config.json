@@ -78,6 +78,9 @@
 
   "seed": 123,
 
+  "generate_checkpoints": false,
+  "steps_between_checkpoints": 20,
+
   "generate_biomass_and_tips_history": true,
   "generate_branching_angles_png": true,
   "generate_branching_angles_csv": true,
