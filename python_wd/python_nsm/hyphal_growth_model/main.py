@@ -7,6 +7,7 @@ import sys             # Access to cmd-line args for mode detection
 import os              # Filesystem ops
 import random          # Python RNG for reproducible seeds
 import math            # Math utilities
+import time            # Timing tracker
 import numpy as np     # NumPy for numerical ops and seeding
 import matplotlib.pyplot as plt  # Plotting library
 
@@ -301,8 +302,6 @@ def generate_outputs(mycel, components, output_dir="outputs"):
     if opts.generate_obj_mesh:
         export_to_obj(mycel, f"{output_dir}/mycelium.obj")
 
-# main.py (imports unchanged, plus the earlier ParallelStepEngine try/except)
-
 def simulate(opts, steps=120, use_parallel=None, workers=None):
     """
     Run the sim loop. If use_parallel is None, read from opts.parallel_processing_mode.
@@ -324,6 +323,9 @@ def simulate(opts, steps=120, use_parallel=None, workers=None):
 
     log_every = parse_int_env("PYCELIUM_LOG_EVERY", 50)
 
+    # Timing start 
+    t0 = time.perf_counter()
+
     try:
         for step in range(steps):
             if engine is None:
@@ -342,10 +344,17 @@ def simulate(opts, steps=120, use_parallel=None, workers=None):
     except KeyboardInterrupt:
         logger.warning("Interrupted by user. Saving final state...")
 
+    # Cleanly shut down the thread pool (if used) before output generation
+    if engine is not None and hasattr(engine, "shutdown"):
+        engine.shutdown()
+
     output_dir = os.getenv("BATCH_OUTPUT_DIR", "outputs")
     logger.info(f"Saving outputs to: {output_dir}")
     generate_outputs(mycel, components, output_dir=output_dir)
-    print("✅ Simulation completed")
+
+    # --- timing end ---
+    elapsed = time.perf_counter() - t0
+    print(f"✅ Simulation completed in {elapsed:.3f} s")
 
 if __name__ == "__main__":
     import argparse
