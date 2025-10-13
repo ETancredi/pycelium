@@ -7,9 +7,7 @@ from core.options import Options  # Sim params
 from compute.field_aggregator import FieldAggregator  # Aggregated multiple field sources
 from vis.anisotropy_grid import AnisotropyGrid  # Grid-based anisotropy directions
 import numpy as np  # Numerical utilities
-
-# NEW: logger (quiet by default; controlled by PYCELIUM_LOG_LEVEL)
-import logging
+import logging # Logging tool
 logger = logging.getLogger("pycelium")
 
 
