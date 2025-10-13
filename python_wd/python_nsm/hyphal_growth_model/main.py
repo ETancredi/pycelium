@@ -56,6 +56,7 @@ try:
 except Exception:
     ParallelStepEngine = None  # keeps main.py usable even if parallel/ isn't present
 
+
 def setup_simulation(opts):
     """
     Initialise simulation:
@@ -130,9 +131,18 @@ def setup_simulation(opts):
     output_dir = os.getenv("BATCH_OUTPUT_DIR", "outputs")
     logger.info(f"Output dir: {output_dir}")
 
-    # Set up checkpoint saver to write JSON every N steps
+    # --- Checkpoint saver (now controlled by Options) ---
     checkpoints_folder = os.path.join(output_dir, "checkpoints")
-    checkpoints = CheckpointSaver(interval_steps=20, output_dir=checkpoints_folder)
+    gen_ckpt = bool(getattr(opts, "generate_checkpoints", True))
+    interval = int(getattr(opts, "steps_between_checkpoints", 20))
+    if gen_ckpt and interval > 0:
+        checkpoints = CheckpointSaver(interval_steps=interval, output_dir=checkpoints_folder)
+        logger.info(f"Checkpoints enabled (every {interval} steps)")
+    else:
+        class _NoopSaver:
+            def maybe_save(self, *a, **k): return None
+        checkpoints = _NoopSaver()
+        logger.info("Checkpoints disabled via Options")
 
     # Autostop monitor, runtime mutator, and stats collector
     autostop = AutoStop(enabled=True)
@@ -302,6 +312,7 @@ def generate_outputs(mycel, components, output_dir="outputs"):
     if opts.generate_obj_mesh:
         export_to_obj(mycel, f"{output_dir}/mycelium.obj")
 
+
 def simulate(opts, steps=120, use_parallel=None, workers=None):
     """
     Run the sim loop. If use_parallel is None, read from opts.parallel_processing_mode.
@@ -355,6 +366,7 @@ def simulate(opts, steps=120, use_parallel=None, workers=None):
     # --- timing end ---
     elapsed = time.perf_counter() - t0
     print(f"✅ Simulation completed in {elapsed:.3f} s")
+
 
 if __name__ == "__main__":
     import argparse
