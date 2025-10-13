@@ -1,20 +1,20 @@
 # parallel/engine.py
 """
-Deterministic parallel step engine.
+Deterministic parallel step engine with lightweight timing instrumentation.
 
-Optimisations in this version (no output changes):
+Optimisations already included (no output changes):
 - Persistent ThreadPoolExecutor (created once, reused).
-- Remove Proposal objects; do three ordered passes over a snapshot of section ids.
+- Three ordered passes over a snapshot of section ids (no Proposal objects).
 - O(1) id -> section lookup per step.
 - Cheaper isolation check (squared distance + cached coords).
-- Field evaluations (density/nutrient) precomputed in parallel via the pool.
+- Field evaluations (density/nutrient) precomputed via the persistent pool.
 
-Orientator remains serial to preserve RNG/state order.
+Set env PYCELIUM_TIMINGS=1 to print a per-phase timing summary at shutdown.
 """
 
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
-import logging
+import logging, os, time
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
@@ -35,7 +35,27 @@ class ParallelStepEngine:
         self.workers = int(workers)
         self._pool = ThreadPoolExecutor(max_workers=self.workers) if self.workers > 1 else None
 
+        # --- timing accumulators (seconds) ---
+        self._t_grow = 0.0
+        self._t_fields = 0.0
+        self._t_destruct = 0.0
+        self._t_branch = 0.0
+        self._t_post = 0.0
+        self._steps = 0
+
     def shutdown(self):
+        """Cleanly shut down the persistent pool (call after the run)."""
+        if os.getenv("PYCELIUM_TIMINGS", "").lower() in ("1", "true", "yes"):
+            total = self._t_grow + self._t_fields + self._t_destruct + self._t_branch + self._t_post
+            def pct(x): return (100.0 * x / total) if total > 0 else 0.0
+            print("\n⏱️  Parallel engine phase timings (aggregate):")
+            print(f"  steps:           {self._steps}")
+            print(f"  grow/update:     {self._t_grow:8.3f} s  ({pct(self._t_grow):5.1f}%)")
+            print(f"  field precomp:   {self._t_fields:8.3f} s  ({pct(self._t_fields):5.1f}%)")
+            print(f"  destructors:     {self._t_destruct:8.3f} s  ({pct(self._t_destruct):5.1f}%)")
+            print(f"  branching:       {self._t_branch:8.3f} s  ({pct(self._t_branch):5.1f}%)")
+            print(f"  post-step wrap:  {self._t_post:8.3f} s  ({pct(self._t_post):5.1f}%)")
+            print(f"  total (tracked): {total:8.3f} s")
         if self._pool is not None:
             self._pool.shutdown(wait=True)
             self._pool = None
@@ -81,8 +101,9 @@ class ParallelStepEngine:
         logger.debug("STEP START: t=%.2f | total_sections=%d", mycel.time, len(mycel.sections))
 
         # ---------------------------------------------------------------------
-        # PASS 0: grow / update (serial, id order)
+        # PASS 0: grow / update
         # ---------------------------------------------------------------------
+        t0 = time.perf_counter()
         for sid in ids:
             s = id_to_section.get(sid)
             if s is None or s.is_dead:
@@ -91,70 +112,58 @@ class ParallelStepEngine:
             s.update()
             if s.is_tip and not s.is_dead:
                 logger.debug("TIP pos=%s len=%.2f age=%.2f", s.end, s.length, s.age)
+        self._t_grow += (time.perf_counter() - t0)
 
         # ---------------------------------------------------------------------
-        # Parallel precompute fields for destructor checks (if needed)
+        # Field precompute (if needed)
         # ---------------------------------------------------------------------
+        t1 = time.perf_counter()
         need_density  = bool(getattr(opts, "die_if_too_dense", False))
         need_nutrient = bool(getattr(opts, "use_nutrient_field", False) and getattr(opts, "nutrient_repulsion", 0) != 0)
-
         density_map: Dict[int, float] = {}
         nutrient_map: Dict[int, float] = {}
-
         current_tips = self._get_tips(mycel)
         if (need_density or need_nutrient) and current_tips:
             tip_sids = [int(t.id) for t in current_tips]
-
             def _field_at_end(t: Section) -> float:
                 agg = t.field_aggregator
                 return agg.compute_field(t.end)[0] if agg else 0.0
-
             if self._pool is not None:
                 values = list(self._pool.map(_field_at_end, current_tips))
             else:
                 values = [_field_at_end(t) for t in current_tips]
-
             for sid, val in zip(tip_sids, values):
                 if need_density:
                     density_map[sid] = val
                 if need_nutrient:
                     nutrient_map[sid] = val
+        self._t_fields += (time.perf_counter() - t1)
 
-        # Cache coords for faster isolation math (still serial, order-sensitive)
+        # ---------------------------------------------------------------------
+        # PASS 1: destructors
+        # ---------------------------------------------------------------------
+        t2 = time.perf_counter()
         r2 = getattr(opts, "neighbour_radius", 0.0) ** 2
-        # Take a snapshot list of tips (we will check other.is_dead live)
         tips_snapshot = self._get_tips(mycel)
         tip_coords = {int(t.id): t.end.coords for t in tips_snapshot}
-
-        # ---------------------------------------------------------------------
-        # PASS 1: destructor checks (serial, id order)
-        # ---------------------------------------------------------------------
         for sid in ids:
             s = id_to_section.get(sid)
             if s is None or not s.is_tip or s.is_dead:
                 continue
-
-            # A) age
             if getattr(opts, "die_if_old", False) and s.age > opts.max_age:
                 s.is_dead = True
                 logger.debug("Tip died of age: age=%.2f > max_age=%.2f", s.age, opts.max_age)
                 continue
-
-            # B) length
             if s.length > opts.max_length:
                 s.is_dead = True
                 logger.debug("Tip died of length: len=%.2f > max_len=%.2f", s.length, opts.max_length)
                 continue
-
-            # C) density (precomputed if requested)
             if need_density and s.field_aggregator:
                 dens = density_map.get(int(s.id), s.field_aggregator.compute_field(s.end)[0])
                 if dens > opts.density_threshold:
                     logger.debug("Density kill: %.3f > threshold %.3f", dens, opts.density_threshold)
                     s.is_dead = True
                     continue
-
-            # D) nutrient repulsion (precomputed if requested)
             if need_nutrient and s.field_aggregator:
                 nf = nutrient_map.get(int(s.id), s.field_aggregator.compute_field(s.end)[0])
                 if nf < -abs(opts.nutrient_repulsion):
@@ -162,12 +171,9 @@ class ParallelStepEngine:
                                  nf, abs(opts.nutrient_repulsion))
                     s.is_dead = True
                     continue
-
-            # E) isolation (live semantics preserved; cheaper math)
             if s.field_aggregator and r2 > 0.0:
                 sx, sy, sz = tip_coords.get(int(s.id), s.end.coords)
                 nearby = 0
-                # Iterate snapshot; skip newly-dead to mimic fresh tip lists
                 for other in tips_snapshot:
                     if other is s or other.is_dead:
                         continue
@@ -180,16 +186,12 @@ class ParallelStepEngine:
                                  nearby, opts.min_supported_tips)
                     s.is_dead = True
                     continue
-
-        # Optional representative debug (safe if no tips)
-        try:
-            logger.debug("Post-destruction sample tip: pos=%s is_tip=%s is_dead=%s", s.end, s.is_tip, s.is_dead)  # type: ignore[name-defined]
-        except Exception:
-            pass
+        self._t_destruct += (time.perf_counter() - t2)
 
         # ---------------------------------------------------------------------
-        # PASS 2: branching (serial, id order; RNG lives here)
+        # PASS 2: branching
         # ---------------------------------------------------------------------
+        t3 = time.perf_counter()
         new_sections: List[Section] = []
         tip_count_pre = len(self._get_tips(mycel))
         for sid in ids:
@@ -201,14 +203,15 @@ class ParallelStepEngine:
                 if child:
                     logger.debug("BRANCHED: %s → %s", s.end, child.orientation)
                     new_sections.append(child)
-
         if new_sections:
             logger.debug("Added %d new sections this step", len(new_sections))
         mycel.sections.extend(new_sections)
+        self._t_branch += (time.perf_counter() - t3)
 
         # ---------------------------------------------------------------------
-        # End-of-step (unchanged)
+        # End-of-step wrapper (unchanged)
         # ---------------------------------------------------------------------
+        t4 = time.perf_counter()
         step_snapshot = [
             {
                 "time": mycel.time,
@@ -242,12 +245,10 @@ class ParallelStepEngine:
             for tip in self._get_tips(mycel)
         ]
         mycel.step_history.append((mycel.time, tip_data))
-        # NB: keep biomass summation semantics as-is to preserve hashes
         total_biomass = sum(sec.length for sec in mycel.sections if not s.is_dead)  # noqa: F821
         mycel.biomass_history.append(total_biomass)
         logger.debug("STEP END: active_tips=%d | biomass=%.2f", len(self._get_tips(mycel)), total_biomass)
 
-        # Post-step wrapper (mirrors main.step_simulation)
         grid.update_from_mycel(mycel)
         if getattr(opts, "use_nutrient_field", False) and getattr(opts, "nutrient_repulsion", 0) > 0:
             if hasattr(mycel, "nutrient_kill_check"):
@@ -256,3 +257,6 @@ class ParallelStepEngine:
         checkpoints.maybe_save(mycel, step)
         stats.update(mycel)
         logger.debug(str(mycel))
+
+        self._t_post += (time.perf_counter() - t4)
+        self._steps += 1
