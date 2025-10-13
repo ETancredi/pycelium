@@ -49,6 +49,11 @@ from analysis.post_analysis import analyse_branching_angles, analyse_tip_orienta
 # Config loader for CLI-mode
 from config.sim_config import load_options_from_json
 
+# Engine for parallel-processing mode
+try:
+    from parallel.engine import ParallelStepEngine
+except Exception:
+    ParallelStepEngine = None  # keeps main.py usable even if parallel/ isn't present
 
 def setup_simulation(opts):
     """
