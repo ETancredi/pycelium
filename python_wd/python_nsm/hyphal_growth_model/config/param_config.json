@@ -99,7 +99,7 @@
   "generate_nutrient_3d_png": true,
 
   "generate_anisotropy_2d_png": true,
-  "generate_anisotropy_3d_png": true
+  "generate_anisotropy_3d_png": true,
 
   "parallel_processing_mode": true,
   "parallel_workers": 4
