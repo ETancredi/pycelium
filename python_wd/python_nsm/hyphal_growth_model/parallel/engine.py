@@ -71,7 +71,7 @@ class ParallelStepEngine:
     def _compute_orientations(self, tips: List[Section], orientator, opts: Options):
         """
         Compute orientations for all tips.
-        If opts.parallelize_orientator and workers>1, do it in a pool but
+        If opts.parallelise_orientator and workers>1, do it in a pool but
         assign results back in the same order for determinism.
         """
         if not tips:
@@ -82,7 +82,7 @@ class ParallelStepEngine:
 
         parallel_ok = (
             self._pool is not None and
-            bool(getattr(opts, "parallelize_orientator", False))
+            bool(getattr(opts, "parallelise_orientator", False))
         )
 
         if parallel_ok:
