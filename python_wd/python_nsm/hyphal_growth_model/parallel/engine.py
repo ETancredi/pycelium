@@ -8,6 +8,7 @@ Optimisations already included (no output changes):
 - O(1) id -> section lookup per step.
 - Cheaper isolation check (squared distance + cached coords).
 - Field evaluations (density/nutrient) precomputed via the persistent pool.
+- (Optional) Parallelised orientator pass with deterministic assignment.
 
 Set env PYCELIUM_TIMINGS=1 to print a per-phase timing summary at shutdown.
 """
@@ -36,6 +37,7 @@ class ParallelStepEngine:
         self._pool = ThreadPoolExecutor(max_workers=self.workers) if self.workers > 1 else None
 
         # --- timing accumulators (seconds) ---
+        self._t_orient = 0.0
         self._t_grow = 0.0
         self._t_fields = 0.0
         self._t_destruct = 0.0
@@ -46,10 +48,11 @@ class ParallelStepEngine:
     def shutdown(self):
         """Cleanly shut down the persistent pool (call after the run)."""
         if os.getenv("PYCELIUM_TIMINGS", "").lower() in ("1", "true", "yes"):
-            total = self._t_grow + self._t_fields + self._t_destruct + self._t_branch + self._t_post
+            total = self._t_orient + self._t_grow + self._t_fields + self._t_destruct + self._t_branch + self._t_post
             def pct(x): return (100.0 * x / total) if total > 0 else 0.0
             print("\n⏱️  Parallel engine phase timings (aggregate):")
             print(f"  steps:           {self._steps}")
+            print(f"  orientator:      {self._t_orient:8.3f} s  ({pct(self._t_orient):5.1f}%)")
             print(f"  grow/update:     {self._t_grow:8.3f} s  ({pct(self._t_grow):5.1f}%)")
             print(f"  field precomp:   {self._t_fields:8.3f} s  ({pct(self._t_fields):5.1f}%)")
             print(f"  destructors:     {self._t_destruct:8.3f} s  ({pct(self._t_destruct):5.1f}%)")
@@ -65,9 +68,32 @@ class ParallelStepEngine:
     def _get_tips(self, mycel):
         return [s for s in mycel.sections if s.is_tip and not s.is_dead]
 
-    def _compute_orientations_serial(self, tips, orientator):
-        for tip in tips:
-            tip.orientation = orientator.compute(tip)
+    def _compute_orientations(self, tips: List[Section], orientator, opts: Options):
+        """
+        Compute orientations for all tips.
+        If opts.parallelize_orientator and workers>1, do it in a pool but
+        assign results back in the same order for determinism.
+        """
+        if not tips:
+            return
+
+        # Always use a stable ordering (list preserves current traversal order)
+        ordered = list(tips)
+
+        parallel_ok = (
+            self._pool is not None and
+            bool(getattr(opts, "parallelize_orientator", False))
+        )
+
+        if parallel_ok:
+            # Parallel compute; deterministic assign
+            results = list(self._pool.map(orientator.compute, ordered))
+            for tip, ori in zip(ordered, results):
+                tip.orientation = ori
+        else:
+            # Serial fallback
+            for tip in ordered:
+                tip.orientation = orientator.compute(tip)
 
     # --- main step -----------------------------------------------------------
 
@@ -91,8 +117,10 @@ class ParallelStepEngine:
         aggregator.sources.clear()
         aggregator.add_sections(mycel.get_all_segments(), strength=1.0, decay=1.5)
 
-        # Orientations (serial to preserve RNG/state)
-        self._compute_orientations_serial(self._get_tips(mycel), orientator)
+        # -------- ORIENTATIONS (optionally parallel) --------
+        t_or = time.perf_counter()
+        self._compute_orientations(self._get_tips(mycel), orientator, opts)
+        self._t_orient += (time.perf_counter() - t_or)
 
         # Snapshot ids and id->section map (O(1) lookups)
         ids = _take_snapshot_ids(mycel.sections)
@@ -245,7 +273,7 @@ class ParallelStepEngine:
             for tip in self._get_tips(mycel)
         ]
         mycel.step_history.append((mycel.time, tip_data))
-        total_biomass = sum(sec.length for sec in mycel.sections if not s.is_dead)  # noqa: F821
+        total_biomass = sum(sec.length for sec in mycel.sections if not sec.is_dead)
         mycel.biomass_history.append(total_biomass)
         logger.debug("STEP END: active_tips=%d | biomass=%.2f", len(self._get_tips(mycel)), total_biomass)
 
