@@ -2,13 +2,14 @@
 """
 Deterministic parallel step engine with lightweight timing instrumentation.
 
-Optimisations already included (no output changes):
+Optimisations (no output changes):
 - Persistent ThreadPoolExecutor (created once, reused).
 - Three ordered passes over a snapshot of section ids (no Proposal objects).
 - O(1) id -> section lookup per step.
 - Cheaper isolation check (squared distance + cached coords).
-- Field evaluations (density/nutrient) precomputed via the persistent pool.
-- (Optional) Parallelised orientator pass with deterministic assignment.
+- Field evaluations precomputed; uses FieldAggregator.compute_field_many if present.
+- Orientator batching via Orientator.compute_many if present (deterministic order).
+- Optional thread-pool map for per-tip fallbacks.
 
 Set env PYCELIUM_TIMINGS=1 to print a per-phase timing summary at shutdown.
 """
@@ -70,30 +71,34 @@ class ParallelStepEngine:
 
     def _compute_orientations(self, tips: List[Section], orientator, opts: Options):
         """
-        Compute orientations for all tips.
-        If opts.parallelise_orientator and workers>1, do it in a pool but
-        assign results back in the same order for determinism.
+        Compute orientations for all tips deterministically.
+        Prefers Orientator.compute_many (batched). Falls back to per-tip compute,
+        optionally in a thread pool if opts.parallelise_orientator is true.
         """
         if not tips:
             return
 
-        # Always use a stable ordering (list preserves current traversal order)
-        ordered = list(tips)
+        t0 = time.perf_counter()
 
-        parallel_ok = (
-            self._pool is not None and
-            bool(getattr(opts, "parallelise_orientator", False))
-        )
+        # Use batching if the orientator provides it (deterministic, order-preserving).
+        if hasattr(orientator, "compute_many"):
+            new_orients = orientator.compute_many(tips)  # returns list[MPoint] in same order
+            for tip, vec in zip(tips, new_orients):
+                tip.orientation = vec
+            self._t_orient += (time.perf_counter() - t0)
+            return
 
+        # Otherwise, fallback to per-tip; allow optional thread mapping
+        parallel_ok = (self._pool is not None) and bool(getattr(opts, "parallelise_orientator", False))
         if parallel_ok:
-            # Parallel compute; deterministic assign
-            results = list(self._pool.map(orientator.compute, ordered))
-            for tip, ori in zip(ordered, results):
+            results = list(self._pool.map(orientator.compute, tips))
+            for tip, ori in zip(tips, results):
                 tip.orientation = ori
         else:
-            # Serial fallback
-            for tip in ordered:
+            for tip in tips:
                 tip.orientation = orientator.compute(tip)
+
+        self._t_orient += (time.perf_counter() - t0)
 
     # --- main step -----------------------------------------------------------
 
@@ -117,10 +122,8 @@ class ParallelStepEngine:
         aggregator.sources.clear()
         aggregator.add_sections(mycel.get_all_segments(), strength=1.0, decay=1.5)
 
-        # -------- ORIENTATIONS (optionally parallel) --------
-        t_or = time.perf_counter()
+        # -------- ORIENTATIONS (batched if available) --------
         self._compute_orientations(self._get_tips(mycel), orientator, opts)
-        self._t_orient += (time.perf_counter() - t_or)
 
         # Snapshot ids and id->section map (O(1) lookups)
         ids = _take_snapshot_ids(mycel.sections)
@@ -151,20 +154,35 @@ class ParallelStepEngine:
         density_map: Dict[int, float] = {}
         nutrient_map: Dict[int, float] = {}
         current_tips = self._get_tips(mycel)
+
         if (need_density or need_nutrient) and current_tips:
             tip_sids = [int(t.id) for t in current_tips]
-            def _field_at_end(t: Section) -> float:
-                agg = t.field_aggregator
-                return agg.compute_field(t.end)[0] if agg else 0.0
-            if self._pool is not None:
-                values = list(self._pool.map(_field_at_end, current_tips))
+
+            # Prefer batched aggregator if available
+            if hasattr(aggregator, "compute_field_many"):
+                points = [t.end for t in current_tips]
+                fields, _ = aggregator.compute_field_many(points)
+                # Same scalar field feeds both density and nutrient checks
+                for sid, val in zip(tip_sids, fields.tolist()):
+                    if need_density:
+                        density_map[sid] = float(val)
+                    if need_nutrient:
+                        nutrient_map[sid] = float(val)
             else:
-                values = [_field_at_end(t) for t in current_tips]
-            for sid, val in zip(tip_sids, values):
-                if need_density:
-                    density_map[sid] = val
-                if need_nutrient:
-                    nutrient_map[sid] = val
+                # fallback: per-tip compute_field (optionally via pool)
+                def _field_at_end(t: Section) -> float:
+                    agg = t.field_aggregator
+                    return agg.compute_field(t.end)[0] if agg else 0.0
+                if self._pool is not None:
+                    values = list(self._pool.map(_field_at_end, current_tips))
+                else:
+                    values = [_field_at_end(t) for t in current_tips]
+                for sid, val in zip(tip_sids, values):
+                    if need_density:
+                        density_map[sid] = val
+                    if need_nutrient:
+                        nutrient_map[sid] = val
+
         self._t_fields += (time.perf_counter() - t1)
 
         # ---------------------------------------------------------------------
