@@ -77,33 +77,30 @@ class ParallelStepEngine:
         step: int,
         master_seed: Optional[int],
     ):
-        """
-        Compute orientations for all tips deterministically.
-        If opts.parallelise_orientator and workers>1, compute in a pool but
-        assign results back to tips in the SAME ORDER (deterministic).
-        """
         if not tips:
             return
-
+    
         ordered = list(tips)  # stable order
-
-        parallel_ok = (
-            self._pool is not None and
-            bool(getattr(opts, "parallelise_orientator", False))
-        )
-
-        if parallel_ok:
-            # Parallel compute; deterministic assignment by list order
-            results = list(self._pool.map(
-                lambda tip: orientator.compute_deterministic(tip, step=step, master_seed=master_seed),
-                ordered
-            ))
-            for tip, ori in zip(ordered, results):
-                tip.orientation = ori
+        use_det = bool(getattr(opts, "deterministic_orientator", False))
+        allow_parallel = self._pool is not None and bool(getattr(opts, "parallelise_orientator", False))
+    
+        if use_det:
+            if allow_parallel:
+                # Parallel compute; deterministic assignment by list order
+                results = list(self._pool.map(
+                    lambda tip: orientator.compute_deterministic(tip, step=step, master_seed=master_seed),
+                    ordered
+                ))
+                for tip, ori in zip(ordered, results):
+                    tip.orientation = ori
+            else:
+                # Serial deterministic
+                for tip in ordered:
+                    tip.orientation = orientator.compute_deterministic(tip, step=step, master_seed=master_seed)
         else:
-            # Serial but still deterministic (per-tip RNG from (seed, step, id))
+            # Legacy non-deterministic orientator ALWAYS serial to preserve RNG stream
             for tip in ordered:
-                tip.orientation = orientator.compute_deterministic(tip, step=step, master_seed=master_seed)
+                tip.orientation = orientator.compute(tip)
 
     # main step
     def step_parallel_equivalent(
