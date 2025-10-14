@@ -137,5 +137,5 @@ class Options:
     parallel_processing_mode: bool = False
     parallel_workers: int = 4
     parallelise_orientator: bool = False
-    deterministic_orientator: bool = False
-    batched_orientator: bool = False
+    deterministic_orientator: bool = True
+    batched_orientator: bool = True
