@@ -107,5 +107,6 @@
   "parallel_processing_mode": true,
   "parallel_workers": 4,
   "parallelise_orientator": true,
-  "deterministic_orientator": true
+  "deterministic_orientator": true,
+  "batched_orientator": true
 }
