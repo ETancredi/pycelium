@@ -78,30 +78,43 @@ class ParallelStepEngine:
         master_seed: Optional[int],
     ):
         if not tips:
+            return  
+        
+        ordered = list(tips) # stable order
+
+        use_det  = bool(getattr(opts, "deterministic_orientator", False))
+        use_batch = bool(getattr(opts, "balanced_orientator", False))
+
+        # Preferred path: deterministic + batched (serial), preserves exact hashes
+        if use_det and use_batch and hasattr(orientator, "compute_many_deterministic"):
+            results = orientator.compute_many_deterministic(
+                ordered, step=step, master_seed=master_seed
+            )
+            for tip, ori in zip(ordered, results):
+                tip.orientation = ori
             return
     
-        ordered = list(tips)  # stable order
-        use_det = bool(getattr(opts, "deterministic_orientator", False))
-        allow_parallel = self._pool is not None and bool(getattr(opts, "parallelise_orientator", False))
+        # Fallbacks:
     
-        if use_det:
-            if allow_parallel:
-                # Parallel compute; deterministic assignment by list order
-                results = list(self._pool.map(
-                    lambda tip: orientator.compute_deterministic(tip, step=step, master_seed=master_seed),
-                    ordered
-                ))
-                for tip, ori in zip(ordered, results):
-                    tip.orientation = ori
-            else:
-                # Serial deterministic
-                for tip in ordered:
-                    tip.orientation = orientator.compute_deterministic(tip, step=step, master_seed=master_seed)
-        else:
-            # Legacy non-deterministic orientator ALWAYS serial to preserve RNG stream
+        # Deterministic per-tip (serial). Still correct but less efficient.
+        if use_det and hasattr(orientator, "compute_deterministic"):
             for tip in ordered:
-                tip.orientation = orientator.compute(tip)
-
+                tip.orientation = orientator.compute_deterministic(
+                    tip, step=step, master_seed=master_seed
+                )
+            return
+    
+        # Legacy batched (uses legacy RNG inside orientator; keep serial to preserve streams)
+        if use_batch and hasattr(orientator, "compute_many"):
+            results = orientator.compute_many(ordered)
+            for tip, ori in zip(ordered, results):
+                tip.orientation = ori
+            return
+    
+        # Legacy per-tip (serial)
+        for tip in ordered:
+            tip.orientation = orientator.compute(tip)
+  
     # main step
     def step_parallel_equivalent(
         self,
