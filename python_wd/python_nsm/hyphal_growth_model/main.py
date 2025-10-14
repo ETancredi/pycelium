@@ -187,9 +187,14 @@ def step_simulation(mycel, components, step):
     aggregator.sources.clear()
     aggregator.add_sections(mycel.get_all_segments(), strength=1.0, decay=1.5)
 
-    # Compute new orientation for each tip using orientator
+    # Compute new orientation for each tip
+    use_det = bool(getattr(opts, "deterministic_orientator", False))
+    seed = getattr(opts, "seed", None)
     for tip in mycel.get_tips():
-        tip.orientation = orientator.compute(tip)
+        if use_det and hasattr(orientator, "compute_deterministic"):
+            tip.orientation = orientator.compute_deterministic(tip, step=step, master_seed=seed)
+        else:
+            tip.orientation = orientator.compute(tip)
 
     # Advance simulation by one time step (grow, branch, prune)
     mycel.step()
