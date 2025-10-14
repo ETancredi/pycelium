@@ -17,12 +17,13 @@ logger = logging.getLogger("pycelium")
 def _stable_uint64(x: int) -> np.uint64:
     """
     SplitMix64-style scrambler to derive a stable 64-bit value from an int.
-    Deterministic across platforms/threads.
+    Deterministic across platforms/threads. Mask after each step to avoid overflow warnings.
     """
-    z = (np.uint64(x) + np.uint64(0x9E3779B97F4A7C15)) & np.uint64(0xFFFFFFFFFFFFFFFF)
-    z = (z ^ (z >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
-    z = (z ^ (z >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
-    z = z ^ (z >> np.uint64(31))
+    mask = np.uint64(0xFFFFFFFFFFFFFFFF)
+    z = (np.uint64(x) + np.uint64(0x9E3779B97F4A7C15)) & mask
+    z = ((z ^ (z >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)) & mask
+    z = ((z ^ (z >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)) & mask
+    z = (z ^ (z >> np.uint64(31))) & mask
     return z
 
 
@@ -248,7 +249,7 @@ class Orientator:
 
         return orientation.normalise()  # Ensure final orientation is a unit vector
 
-    # NEW (kept as you provided): batched compute using aggregator.compute_field_many()
+    # NEW (kept): batched compute using aggregator.compute_field_many()
     def compute_many(self, tips: List[Section]) -> List[MPoint]:
         """
         Compute new orientations for a list of tips, preserving order and results.
@@ -332,6 +333,106 @@ class Orientator:
                 ori.add(MPoint(*rand).normalise().scale(opts.random_walk))
 
             # Directional memory blending
+            if opts.direction_memory_blend > 0 and tip.orientation:
+                blend = opts.direction_memory_blend
+                ori = tip.orientation.copy().scale(blend).add(ori.scale(1.0 - blend)).normalise()
+
+            out_orients[i] = ori.normalise()
+
+        return out_orients
+
+    # NEW: deterministic batched compute (uses compute_field_many + per-tip RNG)
+    def compute_many_deterministic(
+        self,
+        tips: List[Section],
+        *,
+        step: int,
+        master_seed: Optional[int],
+    ) -> List[MPoint]:
+        """
+        Deterministic, batched version of `compute`.
+        - Calls aggregator.compute_field_many(...) once for the batch.
+        - Uses per-(master_seed, step, tip.id) PCG64 RNG for random walk.
+        - Mirrors the math in `compute()` to keep outputs identical
+          when called in the same order.
+        """
+        n = len(tips)
+        if n == 0:
+            return []
+
+        opts = self.options
+        out_orients = [t.orientation.copy() for t in tips]
+
+        # Batched gradients (preserve order)
+        grad_list = [None] * n
+        if self.aggregator is not None:
+            points = [t.end for t in tips]
+            _, grads = self.aggregator.compute_field_many(points)
+            grad_list = grads
+
+        for i, tip in enumerate(tips):
+            ori  = out_orients[i]
+            grad = grad_list[i]
+
+            # Field-based terms
+            if grad is not None:
+                ori.add(grad.copy().scale(opts.autotropism))
+
+                if opts.field_alignment_boost > 0:
+                    grad_unit = grad.copy().normalise()
+                    dot = ori.dot(grad_unit)
+                    if dot > 0:
+                        ori.add(grad_unit.scale(dot * opts.field_alignment_boost))
+
+                if opts.field_curvature_influence > 0 and self.aggregator is not None:
+                    curvature = self.aggregator.compute_field_curvature(tip.end)
+                    direction = grad.copy().normalise()
+                    ori.add(direction.scale(curvature * opts.field_curvature_influence))
+
+            # Density avoidance
+            if opts.die_if_too_dense and self.density_grid:
+                density_grad = self.density_grid.get_gradient_at(tip.end)
+                ori.subtract(density_grad)
+
+            # Gravitropism
+            if opts.gravitropism > 0:
+                z = tip.end.coords[2]
+                if z < opts.gravi_angle_start:
+                    strength = 0
+                elif z > opts.gravi_angle_end:
+                    strength = opts.gravitropism
+                else:
+                    tlin = (z - opts.gravi_angle_start) / (opts.gravi_angle_end - opts.gravi_angle_start)
+                    strength = tlin * opts.gravitropism
+                ori.add(MPoint(0, -1, 0).scale(strength))
+
+            # Nutrients
+            for nutrient in self.nutrient_sources:
+                delta = nutrient.copy().subtract(tip.end)
+                dist = delta.magnitude()
+                if dist < opts.nutrient_radius:
+                    influence = 1.0 - (dist / opts.nutrient_radius)
+                    if opts.nutrient_attraction > 0:
+                        ori.add(delta.copy().normalise().scale(opts.nutrient_attraction * influence))
+                    if opts.nutrient_repulsion > 0:
+                        ori.subtract(delta.copy().normalise().scale(opts.nutrient_repulsion * influence))
+
+            # Anisotropy
+            if opts.anisotropy_enabled:
+                if self.anisotropy_grid:
+                    dir_vec = self.anisotropy_grid.get_direction_at(tip.end)
+                else:
+                    dir_vec = MPoint(*opts.anisotropy_vector).normalise()
+                ori.add(dir_vec.scale(opts.anisotropy_strength))
+
+            # Random walk — deterministic per (seed, step, id)
+            if opts.random_walk > 0:
+                seed64 = int(_combine_seed(master_seed, step, int(getattr(tip, "id", 0))))
+                rng = Generator(PCG64(seed64))
+                rand = rng.normal(0.0, 1.0, 3)
+                ori.add(MPoint(*rand).normalise().scale(opts.random_walk))
+
+            # Directional memory
             if opts.direction_memory_blend > 0 and tip.orientation:
                 blend = opts.direction_memory_blend
                 ori = tip.orientation.copy().scale(blend).add(ori.scale(1.0 - blend)).normalise()
