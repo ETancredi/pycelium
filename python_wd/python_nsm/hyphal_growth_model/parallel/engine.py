@@ -94,21 +94,27 @@ class ParallelStepEngine:
         step: int,
         master_seed: Optional[int],
     ):
-        """Compute orientations deterministically (serial per tip)."""
+        """Step 2: deterministic + **batched** orientator, still serial."""
         if not tips:
             return
-
+    
         ordered = list(tips)  # stable order
-
-        # STEP 1: deterministic orientator enabled, but still serial
-        if bool(getattr(opts, "deterministic_orientator", False)):
-            for tip in ordered:
-                tip.orientation = orientator.compute_deterministic(
-                    tip, step=step, master_seed=master_seed
-                )
+    
+        use_det = bool(getattr(opts, "deterministic_orientator", False))
+        allow_parallel = self._pool is not None and bool(getattr(opts, "parallelise_orientator", False))
+    
+        if use_det:
+            # ---- SERIAL BATCHED PATH (Step 2) ---------------------------------
+            # Even if allow_parallel is True, we *intentionally* keep this serial
+            # for Step 2 to prove equivalence. Parallelisation comes in Step 3.
+            res = orientator.compute_many_deterministic(
+                ordered, step=step, master_seed=master_seed
+            )
+            for tip, ori in zip(ordered, res):
+                tip.orientation = ori
             return
-
-        # Legacy non-deterministic path (global RNG)
+    
+        # Legacy non-deterministic path (global RNG): keep serial to preserve RNG stream
         for tip in ordered:
             tip.orientation = orientator.compute(tip)
 
