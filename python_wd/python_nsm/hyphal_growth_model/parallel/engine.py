@@ -94,30 +94,47 @@ class ParallelStepEngine:
         step: int,
         master_seed: Optional[int],
     ):
-        """Step 2: deterministic + **batched** orientator, still serial."""
+        """Step 3: deterministic + batched + parallel-chunked (deterministic assembly)."""
         if not tips:
             return
     
-        ordered = list(tips)  # stable order
-    
+        ordered = list(tips)  # stable order (by current traversal)
         use_det = bool(getattr(opts, "deterministic_orientator", False))
-        allow_parallel = self._pool is not None and bool(getattr(opts, "parallelise_orientator", False))
+        allow_parallel = (self._pool is not None) and bool(getattr(opts, "parallelise_orientator", False))
+        chunk_size = max(1, int(getattr(opts, "orientator_chunk_size", 256)))
     
-        if use_det:
-            # ---- SERIAL BATCHED PATH (Step 2) ---------------------------------
-            # Even if allow_parallel is True, we *intentionally* keep this serial
-            # for Step 2 to prove equivalence. Parallelisation comes in Step 3.
-            res = orientator.compute_many_deterministic(
-                ordered, step=step, master_seed=master_seed
-            )
+        if use_det and allow_parallel:
+            # ---- Parallel chunked deterministic path ----
+            def _chunks(seq, size):
+                for i in range(0, len(seq), size):
+                    yield seq[i:i+size]
+    
+            chunks = list(_chunks(ordered, chunk_size))
+    
+            def _run_chunk(chunk):
+                # Per-chunk batched, but each tip still uses its own deterministic seed internally.
+                return orientator.compute_many_deterministic(chunk, step=step, master_seed=master_seed)
+    
+            # Run chunks in the pool; gather results in the same order we submitted them.
+            results_chunks = list(self._pool.map(_run_chunk, chunks))
+    
+            # Deterministic assignment back to the *original* tip objects
+            for chunk, res in zip(chunks, results_chunks):
+                for tip, ori in zip(chunk, res):
+                    tip.orientation = ori
+            return
+    
+        if use_det and not allow_parallel:
+            # Step 2 behaviour: deterministic + batched, but serial
+            res = orientator.compute_many_deterministic(ordered, step=step, master_seed=master_seed)
             for tip, ori in zip(ordered, res):
                 tip.orientation = ori
             return
     
-        # Legacy non-deterministic path (global RNG): keep serial to preserve RNG stream
+        # Legacy non-deterministic (global RNG): serial to preserve RNG stream
         for tip in ordered:
             tip.orientation = orientator.compute(tip)
-
+    
     # -----------------------------------------------------------------------
     # Main step
     # -----------------------------------------------------------------------
