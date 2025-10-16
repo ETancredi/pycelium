@@ -1,22 +1,19 @@
 # parallel/engine.py
+
 """
 Deterministic parallel step engine with lightweight timing instrumentation.
 
-Optimisations already included (no output changes):
-- Persistent ThreadPoolExecutor (created once, reused).
-- Three ordered passes over a snapshot of section ids (no Proposal objects).
-- O(1) id -> section lookup per step.
-- Cheaper isolation check (squared distance + cached coords).
-- Field evaluations (density/nutrient) precomputed via the persistent pool.
-- Optional parallelised orientator pass using Orientator.compute_deterministic
-  (per-tip RNG seeded by master_seed, step, tip.id) with deterministic assignment.
+Step 1: Deterministic but SERIAL orientator.
+- Enables `deterministic_orientator` path (per-tip RNG seeded by master_seed, step, tip.id)
+- Keeps orientation compute fully serial (no batching, no parallel threads)
+- Guarantees byte-for-byte equality with the original single-threaded model
 
 Set env PYCELIUM_TIMINGS=1 to print a per-phase timing summary at shutdown.
 """
+
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor
-
 import logging, os, time
 import numpy as np
 
@@ -26,13 +23,18 @@ from core.section import Section
 logger = logging.getLogger("pycelium.parallel.engine")
 
 
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
 def _take_snapshot_ids(sections: List[Section]) -> List[int]:
-    # Deterministic pass order
+    """Stable deterministic ordering of section IDs."""
     return [int(s.id) for s in sections]
 
-def _chunks(seq, size: int):
-    for i in range(0, len(seq), max(1, size)):
-        yield seq[i:i+size]
+
+# ---------------------------------------------------------------------------
+# ParallelStepEngine
+# ---------------------------------------------------------------------------
 
 class ParallelStepEngine:
     def __init__(self, apply_order: str = "id", workers: int = 0):
@@ -49,10 +51,16 @@ class ParallelStepEngine:
         self._t_post = 0.0
         self._steps = 0
 
+    # -----------------------------------------------------------------------
+    # Shutdown / reporting
+    # -----------------------------------------------------------------------
     def shutdown(self):
         """Cleanly shut down the persistent pool (call after the run)."""
         if os.getenv("PYCELIUM_TIMINGS", "").lower() in ("1", "true", "yes"):
-            total = self._t_orient + self._t_grow + self._t_fields + self._t_destruct + self._t_branch + self._t_post
+            total = (
+                self._t_orient + self._t_grow + self._t_fields +
+                self._t_destruct + self._t_branch + self._t_post
+            )
             def pct(x): return (100.0 * x / total) if total > 0 else 0.0
             print("\n⏱️  Parallel engine phase timings (aggregate):")
             print(f"  steps:           {self._steps}")
@@ -63,15 +71,21 @@ class ParallelStepEngine:
             print(f"  branching:       {self._t_branch:8.3f} s  ({pct(self._t_branch):5.1f}%)")
             print(f"  post-step wrap:  {self._t_post:8.3f} s  ({pct(self._t_post):5.1f}%)")
             print(f"  total (tracked): {total:8.3f} s")
+
         if self._pool is not None:
             self._pool.shutdown(wait=True)
             self._pool = None
 
-    # helpers
-
+    # -----------------------------------------------------------------------
+    # Internal helpers
+    # -----------------------------------------------------------------------
     def _get_tips(self, mycel):
+        """Return list of active (non-dead) tip sections."""
         return [s for s in mycel.sections if s.is_tip and not s.is_dead]
 
+    # -----------------------------------------------------------------------
+    # Orientation computation  (Step 1 version: deterministic + serial)
+    # -----------------------------------------------------------------------
     def _compute_orientations(
         self,
         tips: List[Section],
@@ -80,48 +94,27 @@ class ParallelStepEngine:
         step: int,
         master_seed: Optional[int],
     ):
+        """Compute orientations deterministically (serial per tip)."""
         if not tips:
             return
-    
+
         ordered = list(tips)  # stable order
-    
-        use_det = bool(getattr(opts, "deterministic_orientator", False))
-        allow_parallel = self._pool is not None and bool(getattr(opts, "parallelise_orientator", False))
-    
-        # tunable chunk size; default is conservative
-        chunk_size = int(getattr(opts, "orientator_chunk_size", 256))
-    
-        if use_det and allow_parallel:
-            # --- NEW: parallel chunking over compute_many_deterministic ---
-            chunks = list(_chunks(ordered, chunk_size))
-    
-            # map each chunk to a batched deterministic compute
-            def _run_chunk(chunk):
-                # Preserves per-tip RNG streams (seeded inside the method)
-                return orientator.compute_many_deterministic(chunk, step=step, master_seed=master_seed)
-    
-            results_chunks = list(self._pool.map(_run_chunk, chunks))
-    
-            # Deterministic assignment back in original order
-            out_idx = 0
-            for chunk, res in zip(chunks, results_chunks):
-                for tip, ori in zip(chunk, res):
-                    tip.orientation = ori
-                    out_idx += 1
+
+        # STEP 1: deterministic orientator enabled, but still serial
+        if bool(getattr(opts, "deterministic_orientator", False)):
+            for tip in ordered:
+                tip.orientation = orientator.compute_deterministic(
+                    tip, step=step, master_seed=master_seed
+                )
             return
-    
-        if use_det and not allow_parallel:
-            # Serial batched path (still faster than per-tip)
-            res = orientator.compute_many_deterministic(ordered, step=step, master_seed=master_seed)
-            for tip, ori in zip(ordered, res):
-                tip.orientation = ori
-            return
-    
-        # Legacy non-deterministic (global RNG): keep serial to preserve RNG stream
+
+        # Legacy non-deterministic path (global RNG)
         for tip in ordered:
             tip.orientation = orientator.compute(tip)
-  
-    # main step
+
+    # -----------------------------------------------------------------------
+    # Main step
+    # -----------------------------------------------------------------------
     def step_parallel_equivalent(
         self,
         mycel,
@@ -142,15 +135,14 @@ class ParallelStepEngine:
         aggregator.sources.clear()
         aggregator.add_sections(mycel.get_all_segments(), strength=1.0, decay=1.5)
 
-        # ORIENTATIONS (deterministic, optionally parallel)
+        # ORIENTATIONS (deterministic, serial in Step 1)
         t_or = time.perf_counter()
         self._compute_orientations(self._get_tips(mycel), orientator, opts, step, master_seed)
         self._t_orient += (time.perf_counter() - t_or)
 
-        # Snapshot ids and id->section map (O(1) lookups)
+        # Snapshot ids and id→section map
         ids = _take_snapshot_ids(mycel.sections)
         id_to_section = {int(s.id): s for s in mycel.sections}
-
         logger.debug("STEP START: t=%.2f | total_sections=%d", mycel.time, len(mycel.sections))
 
         # PASS 0: grow / update
@@ -161,14 +153,13 @@ class ParallelStepEngine:
                 continue
             s.grow(opts.growth_rate, opts.time_step)
             s.update()
-            if s.is_tip and not s.is_dead:
-                logger.debug("TIP pos=%s len=%.2f age=%.2f", s.end, s.length, s.age)
         self._t_grow += (time.perf_counter() - t0)
 
-        # Field precompute (if needed)
+        # Field precompute (density/nutrient)
         t1 = time.perf_counter()
         need_density  = bool(getattr(opts, "die_if_too_dense", False))
-        need_nutrient = bool(getattr(opts, "use_nutrient_field", False) and getattr(opts, "nutrient_repulsion", 0) != 0)
+        need_nutrient = bool(getattr(opts, "use_nutrient_field", False)
+                             and getattr(opts, "nutrient_repulsion", 0) != 0)
         density_map: Dict[int, float] = {}
         nutrient_map: Dict[int, float] = {}
         current_tips = self._get_tips(mycel)
@@ -177,10 +168,7 @@ class ParallelStepEngine:
             def _field_at_end(t: Section) -> float:
                 agg = t.field_aggregator
                 return agg.compute_field(t.end)[0] if agg else 0.0
-            if self._pool is not None:
-                values = list(self._pool.map(_field_at_end, current_tips))
-            else:
-                values = [_field_at_end(t) for t in current_tips]
+            values = [_field_at_end(t) for t in current_tips]
             for sid, val in zip(tip_sids, values):
                 if need_density:
                     density_map[sid] = val
@@ -197,27 +185,26 @@ class ParallelStepEngine:
             s = id_to_section.get(sid)
             if s is None or not s.is_tip or s.is_dead:
                 continue
+            # Age / length kills
             if getattr(opts, "die_if_old", False) and s.age > opts.max_age:
                 s.is_dead = True
-                logger.debug("Tip died of age: age=%.2f > max_age=%.2f", s.age, opts.max_age)
                 continue
             if s.length > opts.max_length:
                 s.is_dead = True
-                logger.debug("Tip died of length: len=%.2f > max_len=%.2f", s.length, opts.max_length)
                 continue
+            # Density kill
             if need_density and s.field_aggregator:
                 dens = density_map.get(int(s.id), s.field_aggregator.compute_field(s.end)[0])
                 if dens > opts.density_threshold:
-                    logger.debug("Density kill: %.3f > threshold %.3f", dens, opts.density_threshold)
                     s.is_dead = True
                     continue
+            # Nutrient kill
             if need_nutrient and s.field_aggregator:
                 nf = nutrient_map.get(int(s.id), s.field_aggregator.compute_field(s.end)[0])
                 if nf < -abs(opts.nutrient_repulsion):
-                    logger.debug("Repellent kill: nutrient_field=%.3f < -|repulsion|=%.3f",
-                                 nf, abs(opts.nutrient_repulsion))
                     s.is_dead = True
                     continue
+            # Isolation check
             if s.field_aggregator and r2 > 0.0:
                 sx, sy, sz = tip_coords.get(int(s.id), s.end.coords)
                 nearby = 0
@@ -229,8 +216,6 @@ class ParallelStepEngine:
                     if (dx*dx + dy*dy + dz*dz) <= r2:
                         nearby += 1
                 if nearby < getattr(opts, "min_supported_tips", 0):
-                    logger.debug("Isolation kill: neighbours=%d < min_supported=%d",
-                                 nearby, opts.min_supported_tips)
                     s.is_dead = True
                     continue
         self._t_destruct += (time.perf_counter() - t2)
@@ -246,14 +231,12 @@ class ParallelStepEngine:
             if s.is_tip or getattr(opts, "allow_internal_branching", False):
                 child = s.maybe_branch(opts.branch_probability, tip_count=tip_count_pre)
                 if child:
-                    logger.debug("BRANCHED: %s → %s", s.end, child.orientation)
                     new_sections.append(child)
         if new_sections:
-            logger.debug("Added %d new sections this step", len(new_sections))
-        mycel.sections.extend(new_sections)
+            mycel.sections.extend(new_sections)
         self._t_branch += (time.perf_counter() - t3)
 
-        # End-of-step wrapper (unchanged)
+        # PASS 3: wrap-up / book-keeping
         t4 = time.perf_counter()
         step_snapshot = [
             {
@@ -267,30 +250,23 @@ class ParallelStepEngine:
             for tip in self._get_tips(mycel)
         ]
         mycel.time_series.append(step_snapshot)
-
         mycel.time += opts.time_step
 
+        # Tip pruning (if configured)
         if hasattr(opts, "max_supported_tips") and opts.max_supported_tips > 0:
             active_tips = self._get_tips(mycel)
             if len(active_tips) > opts.max_supported_tips:
-                logger.info(
-                    "Tip pruning: %d tips exceed max (%d) → pruning",
-                    len(active_tips), opts.max_supported_tips
-                )
                 excess = len(active_tips) - opts.max_supported_tips
                 to_prune = np.random.choice(active_tips, size=excess, replace=False)
                 for tip in to_prune:
                     tip.is_dead = True
-                    logger.debug("Pruned tip at %s due to overcrowding", tip.end)
 
-        tip_data = [
-            (tip.end.coords[0], tip.end.coords[1], tip.end.coords[2])
-            for tip in self._get_tips(mycel)
-        ]
+        # Biomass / series update
+        tip_data = [(tip.end.coords[0], tip.end.coords[1], tip.end.coords[2])
+                    for tip in self._get_tips(mycel)]
         mycel.step_history.append((mycel.time, tip_data))
         total_biomass = sum(sec.length for sec in mycel.sections if not sec.is_dead)
         mycel.biomass_history.append(total_biomass)
-        logger.debug("STEP END: active_tips=%d | biomass=%.2f", len(self._get_tips(mycel)), total_biomass)
 
         grid.update_from_mycel(mycel)
         if getattr(opts, "use_nutrient_field", False) and getattr(opts, "nutrient_repulsion", 0) > 0:
@@ -299,7 +275,6 @@ class ParallelStepEngine:
         mutator.apply(step, opts)
         checkpoints.maybe_save(mycel, step)
         stats.update(mycel)
-        logger.debug(str(mycel))
 
         self._t_post += (time.perf_counter() - t4)
         self._steps += 1
