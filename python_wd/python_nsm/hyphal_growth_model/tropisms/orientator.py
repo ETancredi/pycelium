@@ -1,19 +1,20 @@
 # tropisms/orientator.py
 
-# Imports
 from __future__ import annotations
 from typing import List, Optional
-from core.point import MPoint  # 3D point/vector ops
-from core.section import Section  # Section segments in mycelium
-from core.options import Options  # Sim params
-from compute.field_aggregator import FieldAggregator  # Aggregated multiple field sources
-from vis.anisotropy_grid import AnisotropyGrid  # Grid-based anisotropy directions
-import numpy as np  # Numerical utilities
+from core.point import MPoint
+from core.section import Section
+from core.options import Options
+from compute.field_aggregator import FieldAggregator
+from vis.anisotropy_grid import AnisotropyGrid
+import numpy as np
 from numpy.random import Generator, PCG64
-import logging  # Logging tool
+import logging
+
 logger = logging.getLogger("pycelium")
 
 
+# ---- stable seeding helpers (masked to avoid overflow warnings) ----
 def _stable_uint64(x: int) -> np.uint64:
     """
     SplitMix64-style scrambler to derive a stable 64-bit value from an int.
@@ -39,75 +40,72 @@ def _combine_seed(master_seed: Optional[int], step: int, tip_id: int) -> np.uint
 
 
 class Orientator:
-    """Combines multiple tropism influences to compute new growth orientation."""
+    """
+    Combines multiple tropism influences to compute new growth orientation.
+
+    Step 1 baseline: deterministic, thread-safe, *serial* path via `compute_deterministic`.
+    Parallel batching is *not* enabled here; behaviour matches the legacy serial model.
+    """
     def __init__(self, options: Options):
-        self.options = options  # Store global sim opts
-        self.aggregator: FieldAggregator = None  # Placeholder for FieldAggregator instance
-        self.density_grid = None  # Placeholder for density grid (avoidance)
-        self.anisotropy_grid: AnisotropyGrid = None  # Placeholder for anisotropy grid
-        self.nutrient_sources: List[MPoint] = []  # List of nutrient source points (MPoint instances)
+        self.options = options
+        self.aggregator: FieldAggregator | None = None
+        self.density_grid = None
+        self.anisotropy_grid: AnisotropyGrid | None = None
+        self.nutrient_sources: List[MPoint] = []
 
     def set_field_source(self, aggregator: FieldAggregator):
-        self.aggregator = aggregator  # Assign the FieldAggregator for chemical/substrate fields
+        self.aggregator = aggregator
 
     def set_density_grid(self, grid):
-        self.density_grid = grid  # Assign a density grid object that provides avoidance gradients
+        self.density_grid = grid
 
     def set_anisotropy_grid(self, grid: AnisotropyGrid):
-        self.anisotropy_grid = grid  # Assign an anisotropy grid for directional bias
+        self.anisotropy_grid = grid
 
     def set_nutrient_sources(self, points: List[MPoint]):
-        self.nutrient_sources = points  # Set list of nutrient attractor/repellent points
+        self.nutrient_sources = points
 
-    # Deterministic entrypoint for parallel-safe orientation computation
+    # -------------------- deterministic serial entrypoint --------------------
     def compute_deterministic(self, section: Section, *, step: int, master_seed: Optional[int]) -> MPoint:
         """
         Deterministic, thread-safe orientation compute:
         - Creates a local RNG seeded by (master_seed, step, section.id).
-        - No global RNG use or shared-state mutation.
-        - Returns exactly the same result as `compute()` would have produced
-          if `compute()` used the same seed and math.
+        - No global RNG or shared-state mutation.
+        - Mirrors the legacy `compute()` math.
         """
         seed64 = int(_combine_seed(master_seed, step, int(section.id)))
         rng = Generator(PCG64(seed64))
         return self._compute_with_rng(section, rng)
 
-    # Internal helper that mirrors `compute()` but uses a provided RNG.
-    # All stochastic draws MUST come from `rng` (no np.random/random).
+    # Helper used by the deterministic path (serial)
     def _compute_with_rng(self, section: Section, rng: Generator) -> MPoint:
         opts = self.options
-        orientation = section.orientation.copy()  # Start w/ current orientation as a mutable copy
+        orientation = section.orientation.copy()
 
         # Autotropism & Field Alignment
         grad = None
         if self.aggregator:
-            _, grad = self.aggregator.compute_field(section.end)  # field + gradient at section end
+            _, grad = self.aggregator.compute_field(section.end)  # scalar, gradient
             if grad is not None:
-                orientation.add(grad.scale(opts.autotropism))  # along gradient
+                orientation.add(grad.scale(float(opts.autotropism)))
 
-                # Boost alignment with field gradient
+                # Alignment boost
                 if opts.field_alignment_boost > 0:
                     grad_unit = grad.copy().normalise()
                     dot = orientation.dot(grad_unit)
                     if dot > 0:
-                        boost = grad_unit.scale(dot * opts.field_alignment_boost)
-                        orientation.add(boost)
-                        logger.debug(f"Gradient alignment boost: dot={dot:.2f}, boost={boost}")
+                        orientation.add(grad_unit.scale(dot * float(opts.field_alignment_boost)))
 
-                # Curvature influence from field
+                # Curvature
                 if opts.field_curvature_influence > 0:
-                    curvature = self.aggregator.compute_field_curvature(section.end)  # Laplacian approx
+                    curvature = self.aggregator.compute_field_curvature(section.end)
                     direction = grad.copy().normalise()
-                    orientation.add(direction.scale(curvature * opts.field_curvature_influence))
-                    logger.debug(
-                        f"Curvature contribution: value={curvature:.3f}, "
-                        f"scaled={curvature * opts.field_curvature_influence:.3f}"
-                    )
+                    orientation.add(direction.scale(curvature * float(opts.field_curvature_influence)))
 
         # Density-based avoidance
         if opts.die_if_too_dense and self.density_grid:
-            density_grad = self.density_grid.get_gradient_at(section.end)  # Points toward higher density
-            orientation.subtract(density_grad)  # Steer away from high-density regions
+            density_grad = self.density_grid.get_gradient_at(section.end)
+            orientation.subtract(density_grad)
 
         # Gravitropism
         if opts.gravitropism > 0:
@@ -119,226 +117,163 @@ class Orientator:
             else:
                 t = (z - opts.gravi_angle_start) / (opts.gravi_angle_end - opts.gravi_angle_start)
                 strength = float(t * opts.gravitropism)
-            gravity_vec = MPoint(0, -1, 0).scale(strength)  # Downward in Y
-            orientation.add(gravity_vec)
+            orientation.add(MPoint(0, -1, 0).scale(strength))
 
         # Nutrient fields
         for nutrient in self.nutrient_sources:
-            delta = nutrient.copy().subtract(section.end)  # Vector toward nutrient source
+            delta = nutrient.copy().subtract(section.end)
             dist = delta.magnitude()
             if dist < opts.nutrient_radius:
                 influence = 1.0 - (dist / opts.nutrient_radius)
                 if opts.nutrient_attraction > 0:
-                    orientation.add(delta.copy().normalise().scale(opts.nutrient_attraction * influence))
+                    orientation.add(delta.copy().normalise().scale(float(opts.nutrient_attraction) * influence))
                 if opts.nutrient_repulsion > 0:
-                    orientation.subtract(delta.copy().normalise().scale(opts.nutrient_repulsion * influence))
+                    orientation.subtract(delta.copy().normalise().scale(float(opts.nutrient_repulsion) * influence))
 
-        # Global or Grid-Based Anisotropy
+        # Anisotropy
         if opts.anisotropy_enabled:
-            if self.anisotropy_grid:
-                dir_vec = self.anisotropy_grid.get_direction_at(section.end)
-                logger.debug(f"Grid-based anisotropy: {dir_vec}")
-            else:
-                dir_vec = MPoint(*opts.anisotropy_vector).normalise()
-                logger.debug(f"Global anisotropy: {opts.anisotropy_vector}")
-            orientation.add(dir_vec.scale(opts.anisotropy_strength))
+            dir_vec = (
+                self.anisotropy_grid.get_direction_at(section.end)
+                if self.anisotropy_grid else
+                MPoint(*opts.anisotropy_vector).normalise()
+            )
+            orientation.add(dir_vec.scale(float(opts.anisotropy_strength)))
 
         # Random walk (use provided RNG)
         if opts.random_walk > 0:
             rand = rng.normal(0.0, 1.0, 3)
-            orientation.add(MPoint(*rand).normalise().scale(opts.random_walk))
+            orientation.add(MPoint(*rand).normalise().scale(float(opts.random_walk)))
 
         # Directional memory blending
         if opts.direction_memory_blend > 0 and section.orientation:
-            blend = opts.direction_memory_blend
-            orientation = (
-                section.orientation.copy().scale(blend)
-                .add(orientation.scale(1.0 - blend))
-                .normalise()
-            )
-            logger.debug(f"Orientation memory: blend={blend:.2f}")
+            blend = float(opts.direction_memory_blend)
+            orientation = section.orientation.copy().scale(blend).add(orientation.scale(1.0 - blend)).normalise()
 
         return orientation.normalise()
-    
-    # Legacy API (unchanged) — single-tip compute using global RNG.
-    # Kept for single-threaded paths & backwards compatibility.
+
+    # -------------------- legacy serial API (unchanged) ----------------------
     def compute(self, section: Section) -> MPoint:
         """
         Original API: uses global RNG (np.random). Not thread-safe deterministic.
+        Kept for backwards compatibility / single-threaded mode.
         """
-        orientation = section.orientation.copy()  # Start w/ current orientation as a mutable copy
+        orientation = section.orientation.copy()
 
-        # Autotropism & Field Alignment
         grad = None
-
         if self.aggregator:
-            _, grad = self.aggregator.compute_field(section.end)  # Compute scalar field and gradient at section end
+            _, grad = self.aggregator.compute_field(section.end)
             if grad is not None:
-                orientation.add(grad.scale(self.options.autotropism))  # Push orientation slightly along gradient direction
+                orientation.add(grad.scale(self.options.autotropism))
 
-                # Boost alignment with field gradient
                 if self.options.field_alignment_boost > 0:
-                    grad_unit = grad.copy().normalise()  # Unit gradient vector
-                    dot = orientation.dot(grad_unit)  # cos(angle) between orientation & gradient
+                    grad_unit = grad.copy().normalise()
+                    dot = orientation.dot(grad_unit)
                     if dot > 0:
-                        boost = grad_unit.scale(dot * self.options.field_alignment_boost)
-                        orientation.add(boost)
-                        logger.debug(f"Gradient alignment boost: dot={dot:.2f}, boost={boost}")
+                        orientation.add(grad_unit.scale(dot * self.options.field_alignment_boost))
 
-                # Curvature influence from field
                 if self.options.field_curvature_influence > 0:
-                    curvature = self.aggregator.compute_field_curvature(section.end)  # Approximate Laplacian of scalar field
-                    direction = grad.copy().normalise()  # Unit direction of gradient
+                    curvature = self.aggregator.compute_field_curvature(section.end)
+                    direction = grad.copy().normalise()
                     orientation.add(direction.scale(curvature * self.options.field_curvature_influence))
-                    logger.debug(f"Curvature contribution: value={curvature:.3f}, scaled={curvature * self.options.field_curvature_influence:.3f}")
 
-        # Density-based avoidance
         if self.options.die_if_too_dense and self.density_grid:
-            density_grad = self.density_grid.get_gradient_at(section.end)  # Points toward higher density
-            orientation.subtract(density_grad)  # Steer away from high-density regions
+            orientation.subtract(self.density_grid.get_gradient_at(section.end))
 
-        # Gravitropism
         if self.options.gravitropism > 0:
-            z = section.end.coords[2]  # Current height (Z)
+            z = section.end.coords[2]
             if z < self.options.gravi_angle_start:
-                strength = 0
+                strength = 0.0
             elif z > self.options.gravi_angle_end:
-                strength = self.options.gravitropism
+                strength = float(self.options.gravitropism)
             else:
-                # Interpolate between start and end heights
                 t = (z - self.options.gravi_angle_start) / (self.options.gravi_angle_end - self.options.gravi_angle_start)
-                strength = t * self.options.gravitropism
-            gravity_vec = MPoint(0, -1, 0).scale(strength)  # Downward in Y
-            orientation.add(gravity_vec)
+                strength = float(t * self.options.gravitropism)
+            orientation.add(MPoint(0, -1, 0).scale(strength))
 
-        # Nutrient fields
         for nutrient in self.nutrient_sources:
-            delta = nutrient.copy().subtract(section.end)  # Vector toward nutrient source
+            delta = nutrient.copy().subtract(section.end)
             dist = delta.magnitude()
             if dist < self.options.nutrient_radius:
                 influence = 1.0 - (dist / self.options.nutrient_radius)
                 if self.options.nutrient_attraction > 0:
-                    orientation.add(delta.copy().normalise().scale(self.options.nutrient_attraction * influence))
+                    orientation.add(delta.copy().normalise().scale(float(self.options.nutrient_attraction) * influence))
                 if self.options.nutrient_repulsion > 0:
-                    orientation.subtract(delta.copy().normalise().scale(self.options.nutrient_repulsion * influence))
+                    orientation.subtract(delta.copy().normalise().scale(float(self.options.nutrient_repulsion) * influence))
 
-        # Global or Grid-Based Anisotropy
         if self.options.anisotropy_enabled:
-            if self.anisotropy_grid:
-                dir_vec = self.anisotropy_grid.get_direction_at(section.end)
-                logger.debug(f"Grid-based anisotropy: {dir_vec}")
-            else:
-                dir_vec = MPoint(*self.options.anisotropy_vector).normalise()
-                logger.debug(f"Global anisotropy: {self.options.anisotropy_vector}")
-            orientation.add(dir_vec.scale(self.options.anisotropy_strength))
+            dir_vec = (
+                self.anisotropy_grid.get_direction_at(section.end)
+                if self.anisotropy_grid else
+                MPoint(*self.options.anisotropy_vector).normalise()
+            )
+            orientation.add(dir_vec.scale(float(self.options.anisotropy_strength)))
 
-        # Random walk
         if self.options.random_walk > 0:
             rand = np.random.normal(0, 1, 3)
-            orientation.add(MPoint(*rand).normalise().scale(self.options.random_walk))
+            orientation.add(MPoint(*rand).normalise().scale(float(self.options.random_walk)))
 
-        # Directional memory blending
         if self.options.direction_memory_blend > 0 and section.orientation:
-            blend = self.options.direction_memory_blend
-            orientation = (
-                section.orientation.copy().scale(blend)
-                .add(orientation.scale(1.0 - blend))
-                .normalise()
-            )
-            logger.debug(f"Orientation memory: blend={blend:.2f}")
+            blend = float(self.options.direction_memory_blend)
+            orientation = section.orientation.copy().scale(blend).add(orientation.scale(1.0 - blend)).normalise()
 
-        return orientation.normalise()  # Ensure final orientation is a unit vector
+        return orientation.normalise()
 
-    # NEW (kept): batched compute using aggregator.compute_field_many()
+    # -------------------- batch helpers (NOT used in Step 1) -----------------
+    # Kept for later steps; currently unused so behaviour is unchanged.
     def compute_many(self, tips: List[Section]) -> List[MPoint]:
-        """
-        Compute new orientations for a list of tips, preserving order and results.
-        Falls back cleanly if aggregator is missing (then identical to per-tip).
-        """
         n = len(tips)
         if n == 0:
             return []
-
-        # Start from current orientations
         out_orients = [t.orientation.copy() for t in tips]
-
-        # ---- fields & gradients in one batched call (preserves order) ----
         grad_list = [None] * n
         if self.aggregator is not None:
             points = [t.end for t in tips]
             _, grads = self.aggregator.compute_field_many(points)
-            grad_list = grads  # list of MPoint (unit)
-
-        # Now apply the exact same influences as in `compute`, per tip.
+            grad_list = grads
         opts = self.options
         for i, tip in enumerate(tips):
             ori = out_orients[i]
             grad = grad_list[i]
-
-            # Autotropism & field alignment
             if grad is not None:
-                ori.add(grad.copy().scale(opts.autotropism))
-
+                ori.add(grad.copy().scale(float(opts.autotropism)))
                 if opts.field_alignment_boost > 0:
                     grad_unit = grad.copy().normalise()
                     dot = ori.dot(grad_unit)
                     if dot > 0:
-                        boost = grad_unit.scale(dot * opts.field_alignment_boost)
-                        ori.add(boost)
-
+                        ori.add(grad_unit.scale(dot * float(opts.field_alignment_boost)))
                 if opts.field_curvature_influence > 0 and self.aggregator is not None:
                     curvature = self.aggregator.compute_field_curvature(tip.end)
                     direction = grad.copy().normalise()
-                    ori.add(direction.scale(curvature * opts.field_curvature_influence))
-
-            # Density-based avoidance
+                    ori.add(direction.scale(curvature * float(opts.field_curvature_influence)))
             if opts.die_if_too_dense and self.density_grid:
-                density_grad = self.density_grid.get_gradient_at(tip.end)
-                ori.subtract(density_grad)
-
-            # Gravitropism
+                ori.subtract(self.density_grid.get_gradient_at(tip.end))
             if opts.gravitropism > 0:
                 z = tip.end.coords[2]
-                if z < opts.gravi_angle_start:
-                    strength = 0
-                elif z > opts.gravi_angle_end:
-                    strength = opts.gravitropism
+                if z < opts.gravi_angle_start: strength = 0.0
+                elif z > opts.gravi_angle_end: strength = float(opts.gravitropism)
                 else:
                     t = (z - opts.gravi_angle_start) / (opts.gravi_angle_end - opts.gravi_angle_start)
-                    strength = t * opts.gravitropism
+                    strength = float(t * opts.gravitropism)
                 ori.add(MPoint(0, -1, 0).scale(strength))
-
-            # Nutrient fields
             for nutrient in self.nutrient_sources:
                 delta = nutrient.copy().subtract(tip.end)
                 dist = delta.magnitude()
                 if dist < opts.nutrient_radius:
                     influence = 1.0 - (dist / opts.nutrient_radius)
                     if opts.nutrient_attraction > 0:
-                        ori.add(delta.copy().normalise().scale(opts.nutrient_attraction * influence))
+                        ori.add(delta.copy().normalise().scale(float(opts.nutrient_attraction) * influence))
                     if opts.nutrient_repulsion > 0:
-                        ori.subtract(delta.copy().normalise().scale(opts.nutrient_repulsion * influence))
-
-            # Anisotropy
+                        ori.subtract(delta.copy().normalise().scale(float(opts.nutrient_repulsion) * influence))
             if opts.anisotropy_enabled:
-                if self.anisotropy_grid:
-                    dir_vec = self.anisotropy_grid.get_direction_at(tip.end)
-                else:
-                    dir_vec = MPoint(*opts.anisotropy_vector).normalise()
-                ori.add(dir_vec.scale(opts.anisotropy_strength))
-
-            # Random walk (legacy global RNG)
+                dir_vec = self.anisotropy_grid.get_direction_at(tip.end) if self.anisotropy_grid else MPoint(*opts.anisotropy_vector).normalise()
+                ori.add(dir_vec.scale(float(opts.anisotropy_strength)))
             if opts.random_walk > 0:
                 rand = np.random.normal(0, 1, 3)
-                ori.add(MPoint(*rand).normalise().scale(opts.random_walk))
-
-            # Directional memory blending
+                ori.add(MPoint(*rand).normalise().scale(float(opts.random_walk)))
             if opts.direction_memory_blend > 0 and tip.orientation:
-                blend = opts.direction_memory_blend
+                blend = float(opts.direction_memory_blend)
                 ori = tip.orientation.copy().scale(blend).add(ori.scale(1.0 - blend)).normalise()
-
             out_orients[i] = ori.normalise()
-
         return out_orients
 
     def compute_many_deterministic(
@@ -350,21 +285,17 @@ class Orientator:
     ) -> List[MPoint]:
         """
         Deterministic, chunk-friendly orientation compute for a list of tips.
-
-        IMPORTANT: Uses the *same per-tip aggregator calls* as compute_deterministic()
-        to guarantee byte-for-byte equality. We only batch RNG and run this whole
-        method in parallel from the engine (per chunk).
+        NOTE: We intentionally keep per-tip aggregator calls (no field batching) so
+        behaviour stays byte-for-byte equal to the serial deterministic path.
         """
         n = len(tips)
         if n == 0:
             return []
 
         opts = self.options
-
-        # Start from current orientations
         out_orients = [t.orientation.copy() for t in tips]
 
-        # ---- RNG batch (random walk) -------------------------------------
+        # RNG batch for random-walk (still per-tip seeded)
         rand_vectors = None
         if opts.random_walk > 0:
             rand_vectors = np.empty((n, 3), dtype=float)
@@ -373,33 +304,27 @@ class Orientator:
                 g = Generator(PCG64(seed64))
                 rand_vectors[i, :] = g.normal(0.0, 1.0, 3)
 
-        # ---- Per-tip exact path (mirrors _compute_with_rng) --------------
         for i, tip in enumerate(tips):
             ori = out_orients[i]
 
-            # Autotropism & Field Alignment
             grad = None
             if self.aggregator:
-                _, grad = self.aggregator.compute_field(tip.end)  # exact per-tip call
+                _, grad = self.aggregator.compute_field(tip.end)
                 if grad is not None:
-                    ori.add(grad.copy().scale(opts.autotropism))
-
+                    ori.add(grad.copy().scale(float(opts.autotropism)))
                     if opts.field_alignment_boost > 0:
                         grad_unit = grad.copy().normalise()
                         dot = ori.dot(grad_unit)
                         if dot > 0:
-                            ori.add(grad_unit.scale(dot * opts.field_alignment_boost))
-
+                            ori.add(grad_unit.scale(dot * float(opts.field_alignment_boost)))
                     if opts.field_curvature_influence > 0:
-                        curvature = self.aggregator.compute_field_curvature(tip.end)  # exact per-tip call
+                        curvature = self.aggregator.compute_field_curvature(tip.end)
                         direction = grad.copy().normalise()
-                        ori.add(direction.scale(curvature * opts.field_curvature_influence))
+                        ori.add(direction.scale(curvature * float(opts.field_curvature_influence)))
 
-            # Density-based avoidance
             if opts.die_if_too_dense and self.density_grid:
                 ori.subtract(self.density_grid.get_gradient_at(tip.end))
 
-            # Gravitropism
             if opts.gravitropism > 0:
                 z = tip.end.coords[2]
                 if z < opts.gravi_angle_start:
@@ -407,38 +332,30 @@ class Orientator:
                 elif z > opts.gravi_angle_end:
                     strength = float(opts.gravitropism)
                 else:
-                    tlin = (z - opts.gravi_angle_start) / (opts.gravi_angle_end - opts.gravi_angle_start)
-                    strength = float(tlin * opts.gravitropism)
+                    t = (z - opts.gravi_angle_start) / (opts.gravi_angle_end - opts.gravi_angle_start)
+                    strength = float(t * opts.gravitropism)
                 ori.add(MPoint(0, -1, 0).scale(strength))
 
-            # Nutrient fields
             for nutrient in self.nutrient_sources:
                 delta = nutrient.copy().subtract(tip.end)
                 dist = delta.magnitude()
                 if dist < opts.nutrient_radius:
                     influence = 1.0 - (dist / opts.nutrient_radius)
                     if opts.nutrient_attraction > 0:
-                        ori.add(delta.copy().normalise().scale(opts.nutrient_attraction * influence))
+                        ori.add(delta.copy().normalise().scale(float(opts.nutrient_attraction) * influence))
                     if opts.nutrient_repulsion > 0:
-                        ori.subtract(delta.copy().normalise().scale(opts.nutrient_repulsion * influence))
+                        ori.subtract(delta.copy().normalise().scale(float(opts.nutrient_repulsion) * influence))
 
-            # Anisotropy
             if opts.anisotropy_enabled:
-                dir_vec = (
-                    self.anisotropy_grid.get_direction_at(tip.end)
-                    if self.anisotropy_grid else
-                    MPoint(*opts.anisotropy_vector).normalise()
-                )
-                ori.add(dir_vec.scale(opts.anisotropy_strength))
+                dir_vec = self.anisotropy_grid.get_direction_at(tip.end) if self.anisotropy_grid else MPoint(*opts.anisotropy_vector).normalise()
+                ori.add(dir_vec.scale(float(opts.anisotropy_strength)))
 
-            # Random walk (batched but per-tip deterministic)
             if opts.random_walk > 0 and rand_vectors is not None:
                 rw = rand_vectors[i, :]
-                ori.add(MPoint(*rw).normalise().scale(opts.random_walk))
+                ori.add(MPoint(*rw).normalise().scale(float(opts.random_walk)))
 
-            # Directional memory blending
             if opts.direction_memory_blend > 0 and tip.orientation:
-                blend = opts.direction_memory_blend
+                blend = float(opts.direction_memory_blend)
                 ori = tip.orientation.copy().scale(blend).add(ori.scale(1.0 - blend)).normalise()
 
             out_orients[i] = ori.normalise()
