@@ -138,3 +138,8 @@ class FieldAggregator:
 
         curvature = laplace_sum / (epsilon ** 2)  # Scale by ε² to approximate curvature
         return curvature  # Return scalar field curvature at the point
+
+    # Trivial batched helper, so orientator can call it
+    def compute_field_curvature_many(self, points: List[MPoint]) -> List[float]:
+        """Batched curvature (defaults to per-point fallback)."""
+        return [self.compute_field_curvature(p) for p in points]
