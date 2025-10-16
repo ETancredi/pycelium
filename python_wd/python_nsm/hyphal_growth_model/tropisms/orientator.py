@@ -341,102 +341,130 @@ class Orientator:
 
         return out_orients
 
-    # NEW: deterministic batched compute (uses compute_field_many + per-tip RNG)
-    def compute_many_deterministic(
-        self,
-        tips: List[Section],
-        *,
-        step: int,
-        master_seed: Optional[int],
-    ) -> List[MPoint]:
-        """
-        Deterministic, batched version of `compute`.
-        - Calls aggregator.compute_field_many(...) once for the batch.
-        - Uses per-(master_seed, step, tip.id) PCG64 RNG for random walk.
-        - Mirrors the math in `compute()` to keep outputs identical
-          when called in the same order.
-        """
-        n = len(tips)
-        if n == 0:
-            return []
-
-        opts = self.options
-        out_orients = [t.orientation.copy() for t in tips]
-
-        # Batched gradients (preserve order)
-        grad_list = [None] * n
-        if self.aggregator is not None:
-            points = [t.end for t in tips]
-            _, grads = self.aggregator.compute_field_many(points)
-            grad_list = grads
-
-        for i, tip in enumerate(tips):
-            ori  = out_orients[i]
-            grad = grad_list[i]
-
-            # Field-based terms
-            if grad is not None:
-                ori.add(grad.copy().scale(opts.autotropism))
-
-                if opts.field_alignment_boost > 0:
-                    grad_unit = grad.copy().normalise()
-                    dot = ori.dot(grad_unit)
-                    if dot > 0:
-                        ori.add(grad_unit.scale(dot * opts.field_alignment_boost))
-
-                if opts.field_curvature_influence > 0 and self.aggregator is not None:
-                    curvature = self.aggregator.compute_field_curvature(tip.end)
-                    direction = grad.copy().normalise()
-                    ori.add(direction.scale(curvature * opts.field_curvature_influence))
-
-            # Density avoidance
-            if opts.die_if_too_dense and self.density_grid:
-                density_grad = self.density_grid.get_gradient_at(tip.end)
-                ori.subtract(density_grad)
-
-            # Gravitropism
-            if opts.gravitropism > 0:
-                z = tip.end.coords[2]
-                if z < opts.gravi_angle_start:
-                    strength = 0
-                elif z > opts.gravi_angle_end:
-                    strength = opts.gravitropism
+        def compute_many_deterministic(
+            self,
+            tips: List[Section],
+            *,
+            step: int,
+            master_seed: Optional[int],
+        ) -> List[MPoint]:
+            """
+            Deterministic, batched orientation compute for a list of tips.
+            - One gradient batch via aggregator.compute_field_many
+            - Optional one curvature batch via aggregator.compute_field_curvature_many
+            - One RNG batch for all random-walk vectors
+            Preserves order and exact math of per-tip deterministic path.
+            """
+            n = len(tips)
+            if n == 0:
+                return []
+        
+            opts = self.options
+        
+            # Start from current orientations
+            out_orients = [t.orientation.copy() for t in tips]
+        
+            # ---- fields & gradients in one batched call (preserves order) ----
+            grad_list: List[Optional[MPoint]] = [None] * n
+            if self.aggregator is not None:
+                points = [t.end for t in tips]
+                _, grads = self.aggregator.compute_field_many(points)
+                grad_list = grads  # list[Optional[MPoint]]
+        
+            # ---- curvature batch (when used) ---------------------------------
+            curv_list: Optional[List[float]] = None
+            if (
+                opts.field_curvature_influence > 0
+                and self.aggregator is not None
+            ):
+                points = [t.end for t in tips]
+                # If the aggregator exposes a batched curvature method, use it; else fallback per-tip.
+                if hasattr(self.aggregator, "compute_field_curvature_many"):
+                    curv_list = self.aggregator.compute_field_curvature_many(points)
                 else:
-                    tlin = (z - opts.gravi_angle_start) / (opts.gravi_angle_end - opts.gravi_angle_start)
-                    strength = tlin * opts.gravitropism
-                ori.add(MPoint(0, -1, 0).scale(strength))
-
-            # Nutrients
-            for nutrient in self.nutrient_sources:
-                delta = nutrient.copy().subtract(tip.end)
-                dist = delta.magnitude()
-                if dist < opts.nutrient_radius:
-                    influence = 1.0 - (dist / opts.nutrient_radius)
-                    if opts.nutrient_attraction > 0:
-                        ori.add(delta.copy().normalise().scale(opts.nutrient_attraction * influence))
-                    if opts.nutrient_repulsion > 0:
-                        ori.subtract(delta.copy().normalise().scale(opts.nutrient_repulsion * influence))
-
-            # Anisotropy
-            if opts.anisotropy_enabled:
-                if self.anisotropy_grid:
-                    dir_vec = self.anisotropy_grid.get_direction_at(tip.end)
-                else:
-                    dir_vec = MPoint(*opts.anisotropy_vector).normalise()
-                ori.add(dir_vec.scale(opts.anisotropy_strength))
-
-            # Random walk — deterministic per (seed, step, id)
+                    curv_list = [self.aggregator.compute_field_curvature(p) for p in points]
+        
+            # ---- RNG batch (random walk) -------------------------------------
+            # Deterministic per-tip RNG seeds derived from (master_seed, step, tip.id),
+            # but drawn via one batched call for speed.
+            rand_vectors = None
             if opts.random_walk > 0:
-                seed64 = int(_combine_seed(master_seed, step, int(getattr(tip, "id", 0))))
-                rng = Generator(PCG64(seed64))
-                rand = rng.normal(0.0, 1.0, 3)
-                ori.add(MPoint(*rand).normalise().scale(opts.random_walk))
-
-            # Directional memory
-            if opts.direction_memory_blend > 0 and tip.orientation:
-                blend = opts.direction_memory_blend
-                ori = tip.orientation.copy().scale(blend).add(ori.scale(1.0 - blend)).normalise()
-
-            out_orients[i] = ori.normalise()
-
-        return out_orients
+                # Recreate the same per-tip PCG stream by seeding each row independently.
+                # We do that by generating the 3 normals for each tip with a dedicated Generator.
+                # This keeps results identical to compute_deterministic() per tip.
+                rand_vectors = np.empty((n, 3), dtype=float)
+                for i, tip in enumerate(tips):
+                    seed64 = int(_combine_seed(master_seed, step, int(tip.id)))
+                    g = Generator(PCG64(seed64))
+                    rand_vectors[i, :] = g.normal(0.0, 1.0, 3)
+        
+            # ---- apply influences exactly as in the per-tip deterministic path ----
+            for i, tip in enumerate(tips):
+                ori = out_orients[i]
+                grad = grad_list[i]
+        
+                # Autotropism & field alignment
+                if grad is not None:
+                    ori.add(grad.copy().scale(opts.autotropism))
+        
+                    if opts.field_alignment_boost > 0:
+                        grad_unit = grad.copy().normalise()
+                        dot = ori.dot(grad_unit)
+                        if dot > 0:
+                            boost = grad_unit.scale(dot * opts.field_alignment_boost)
+                            ori.add(boost)
+        
+                    if opts.field_curvature_influence > 0 and curv_list is not None:
+                        curvature = curv_list[i]
+                        direction = grad.copy().normalise()
+                        ori.add(direction.scale(curvature * opts.field_curvature_influence))
+        
+                # Density-based avoidance
+                if opts.die_if_too_dense and self.density_grid:
+                    density_grad = self.density_grid.get_gradient_at(tip.end)
+                    ori.subtract(density_grad)
+        
+                # Gravitropism
+                if opts.gravitropism > 0:
+                    z = tip.end.coords[2]
+                    if z < opts.gravi_angle_start:
+                        strength = 0.0
+                    elif z > opts.gravi_angle_end:
+                        strength = float(opts.gravitropism)
+                    else:
+                        t = (z - opts.gravi_angle_start) / (opts.gravi_angle_end - opts.gravi_angle_start)
+                        strength = float(t * opts.gravitropism)
+                    ori.add(MPoint(0, -1, 0).scale(strength))
+        
+                # Nutrient fields
+                for nutrient in self.nutrient_sources:
+                    delta = nutrient.copy().subtract(tip.end)
+                    dist = delta.magnitude()
+                    if dist < opts.nutrient_radius:
+                        influence = 1.0 - (dist / opts.nutrient_radius)
+                        if opts.nutrient_attraction > 0:
+                            ori.add(delta.copy().normalise().scale(opts.nutrient_attraction * influence))
+                        if opts.nutrient_repulsion > 0:
+                            ori.subtract(delta.copy().normalise().scale(opts.nutrient_repulsion * influence))
+        
+                # Anisotropy
+                if opts.anisotropy_enabled:
+                    if self.anisotropy_grid:
+                        dir_vec = self.anisotropy_grid.get_direction_at(tip.end)
+                    else:
+                        dir_vec = MPoint(*opts.anisotropy_vector).normalise()
+                    ori.add(dir_vec.scale(opts.anisotropy_strength))
+        
+                # Random walk (batched but deterministically seeded per tip)
+                if opts.random_walk > 0 and rand_vectors is not None:
+                    rw = rand_vectors[i, :]
+                    ori.add(MPoint(*rw).normalise().scale(opts.random_walk))
+        
+                # Directional memory blending
+                if opts.direction_memory_blend > 0 and tip.orientation:
+                    blend = opts.direction_memory_blend
+                    ori = tip.orientation.copy().scale(blend).add(ori.scale(1.0 - blend)).normalise()
+        
+                out_orients[i] = ori.normalise()
+        
+            return out_orients
