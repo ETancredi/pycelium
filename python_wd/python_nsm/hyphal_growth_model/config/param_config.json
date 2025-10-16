@@ -108,5 +108,6 @@
   "parallel_workers": 4,
   "parallelise_orientator": true,
   "deterministic_orientator": true,
-  "batched_orientator": true
+  "batched_orientator": true,
+  "orientator_chunk_size": 256
 }
