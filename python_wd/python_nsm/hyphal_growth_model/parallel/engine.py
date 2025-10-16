@@ -14,10 +14,11 @@ Optimisations already included (no output changes):
 Set env PYCELIUM_TIMINGS=1 to print a per-phase timing summary at shutdown.
 """
 
-from __future__ import annotations
-from typing import Any, Dict, List, Optional
 import logging, os, time
 import numpy as np
+
+from __future__ import annotations
+from typing import Any, Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor
 
 from core.options import Options
