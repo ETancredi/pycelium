@@ -349,11 +349,11 @@ class Orientator:
         master_seed: Optional[int],
     ) -> List[MPoint]:
         """
-        Deterministic, batched orientation compute for a list of tips.
-        - One gradient batch via aggregator.compute_field_many
-        - Optional one curvature batch via aggregator.compute_field_curvature_many
-        - One RNG batch for all random-walk vectors
-        Preserves order and exact math of per-tip deterministic path.
+        Deterministic, chunk-friendly orientation compute for a list of tips.
+
+        IMPORTANT: Uses the *same per-tip aggregator calls* as compute_deterministic()
+        to guarantee byte-for-byte equality. We only batch RNG and run this whole
+        method in parallel from the engine (per chunk).
         """
         n = len(tips)
         if n == 0:
@@ -364,22 +364,6 @@ class Orientator:
         # Start from current orientations
         out_orients = [t.orientation.copy() for t in tips]
 
-        # ---- fields & gradients in one batched call (preserves order) ----
-        grad_list: List[Optional[MPoint]] = [None] * n
-        if self.aggregator is not None:
-            points = [t.end for t in tips]
-            _, grads = self.aggregator.compute_field_many(points)
-            grad_list = grads  # list[Optional[MPoint]]
-
-        # ---- curvature batch (when used) ---------------------------------
-        curv_list: Optional[List[float]] = None
-        if opts.field_curvature_influence > 0 and self.aggregator is not None:
-            points = [t.end for t in tips]
-            if hasattr(self.aggregator, "compute_field_curvature_many"):
-                curv_list = self.aggregator.compute_field_curvature_many(points)
-            else:
-                curv_list = [self.aggregator.compute_field_curvature(p) for p in points]
-
         # ---- RNG batch (random walk) -------------------------------------
         rand_vectors = None
         if opts.random_walk > 0:
@@ -389,25 +373,27 @@ class Orientator:
                 g = Generator(PCG64(seed64))
                 rand_vectors[i, :] = g.normal(0.0, 1.0, 3)
 
-        # ---- apply influences exactly as in per-tip deterministic path ----
+        # ---- Per-tip exact path (mirrors _compute_with_rng) --------------
         for i, tip in enumerate(tips):
             ori = out_orients[i]
-            grad = grad_list[i]
 
-            # Autotropism & field alignment
-            if grad is not None:
-                ori.add(grad.copy().scale(opts.autotropism))
+            # Autotropism & Field Alignment
+            grad = None
+            if self.aggregator:
+                _, grad = self.aggregator.compute_field(tip.end)  # exact per-tip call
+                if grad is not None:
+                    ori.add(grad.copy().scale(opts.autotropism))
 
-                if opts.field_alignment_boost > 0:
-                    grad_unit = grad.copy().normalise()
-                    dot = ori.dot(grad_unit)
-                    if dot > 0:
-                        ori.add(grad_unit.scale(dot * opts.field_alignment_boost))
+                    if opts.field_alignment_boost > 0:
+                        grad_unit = grad.copy().normalise()
+                        dot = ori.dot(grad_unit)
+                        if dot > 0:
+                            ori.add(grad_unit.scale(dot * opts.field_alignment_boost))
 
-                if opts.field_curvature_influence > 0 and curv_list is not None:
-                    curvature = curv_list[i]
-                    direction = grad.copy().normalise()
-                    ori.add(direction.scale(curvature * opts.field_curvature_influence))
+                    if opts.field_curvature_influence > 0:
+                        curvature = self.aggregator.compute_field_curvature(tip.end)  # exact per-tip call
+                        direction = grad.copy().normalise()
+                        ori.add(direction.scale(curvature * opts.field_curvature_influence))
 
             # Density-based avoidance
             if opts.die_if_too_dense and self.density_grid:
