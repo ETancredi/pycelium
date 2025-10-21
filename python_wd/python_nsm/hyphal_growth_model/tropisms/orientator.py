@@ -21,6 +21,7 @@ def _stable_uint64(x: int) -> np.uint64:
     Deterministic across platforms/threads. Mask after each step to avoid overflow warnings.
     """
     mask = np.uint64(0xFFFFFFFFFFFFFFFF)
+    with np.errstate(over="ignore"):
     z = (np.uint64(x) + np.uint64(0x9E3779B97F4A7C15)) & mask
     z = ((z ^ (z >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)) & mask
     z = ((z ^ (z >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)) & mask
