@@ -215,7 +215,15 @@ class ParallelStepEngine:
         batched = bool(getattr(opts, "orientator_batched", True))
         allow_parallel = bool(getattr(opts, "parallelise_orientator", False))
         backend = (getattr(opts, "orientator_backend", "thread") or "thread").lower()
-        chunk_size = int(getattr(opts, "orientator_chunk_size", 1024))
+        req_chunk = int(getattr(opts, "orientator_chunk_size", 256))
+        if req_chunk > 0:
+            chunk_size = req_chunk
+        else:
+            # Adaptive: aim for ~2–3 chunks per worker, but never below 256
+            W = max(1, self.workers)
+            n = len(ordered)
+            target_chunks = max(2*W, 1)
+            chunk_size = max(256, (n + target_chunks - 1) // target_chunks)
 
         # --- Step 1: deterministic serial (no batching)
         if det and not batched:
