@@ -1,5 +1,5 @@
 {
-  "use_2d": true 
+  "use_2d": true, 
   "growth_rate": 1.0,
   "time_step": 1.0,
 
