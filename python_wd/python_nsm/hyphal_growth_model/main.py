@@ -230,8 +230,27 @@ def generate_outputs(mycel, components, output_dir="outputs"):
     opts = components["opts"]
     anisotropy_grid = components.get("anisotropy_grid", None)
 
-    # Are we in 2D-only mode?
-    is_2d = getattr(opts, "use_2d", False)
+        # In 2D mode, prefer 2D visualisations and disable 3D-heavy outputs
+    if getattr(opts, "use_2d", False):
+        # Ensure 2D outputs are on
+        opts.generate_mycelium_2d_png = True
+        # Nutrient/aniso 2D defaults – keep whatever the user set, but if missing assume True
+        if hasattr(opts, "generate_nutrient_2d_png"):
+            opts.generate_nutrient_2d_png = True
+        if hasattr(opts, "generate_anisotropy_2d_png"):
+            opts.generate_anisotropy_2d_png = True
+
+        # Turn off 3D-only / 3D-heavy outputs
+        if hasattr(opts, "generate_mycelium_3d_png"):
+            opts.generate_mycelium_3d_png = False
+        if hasattr(opts, "generate_mycelium_3d_interactive_html"):
+            opts.generate_mycelium_3d_interactive_html = False
+        if hasattr(opts, "generate_nutrient_3d_png"):
+            opts.generate_nutrient_3d_png = False
+        if hasattr(opts, "generate_anisotropy_3d_png"):
+            opts.generate_anisotropy_3d_png = False
+        if hasattr(opts, "generate_obj_mesh"):
+            opts.generate_obj_mesh = False
 
     logger.info(f"Saving selected outputs to '{output_dir}'...")
 
