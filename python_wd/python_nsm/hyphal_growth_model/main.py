@@ -230,6 +230,9 @@ def generate_outputs(mycel, components, output_dir="outputs"):
     opts = components["opts"]
     anisotropy_grid = components.get("anisotropy_grid", None)
 
+    # Are we in 2D-only mode?
+    is_2d = getattr(opts, "use_2d", False)
+
     logger.info(f"Saving selected outputs to '{output_dir}'...")
 
     # --- Core plots ---
