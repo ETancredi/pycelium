@@ -126,14 +126,16 @@ def setup_simulation(opts):
 
     orientator.set_field_source(aggregator)
 
-    # Initialise density grid for avoidance behaviours
+    # Initialise density grid for avoidance behaviours (already 2D)
     grid = DensityGrid(width=100, height=100, resolution=1.0)
     orientator.set_density_grid(grid)
 
     # Optionally set up anisotropy grid if enabled
     anisotropy_grid = None
     if opts.anisotropy_enabled:
-        anisotropy_grid = AnisotropyGrid(width=100, height=100, depth=100, resolution=10.0)
+        # In 2D mode, squash the grid into a single layer in z to save memory/compute
+        depth = 1 if getattr(opts, "use_2d", False) else 100
+        anisotropy_grid = AnisotropyGrid(width=100, height=100, depth=depth, resolution=10.0)
         anisotropy_grid.set_uniform_direction(MPoint(*opts.anisotropy_vector))
         orientator.set_anisotropy_grid(anisotropy_grid)
 
