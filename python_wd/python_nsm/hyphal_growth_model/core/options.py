@@ -7,6 +7,9 @@ from typing import List, Tuple, Optional # Import list and Tuple for tupe annota
 @dataclass
 class Options:
     """Configuration container for all simulation parameters."""
+
+    # Dimensionality
+    use_2d: bool = True # if True, constrain simulation to z=0 plane and use 2D grids where possible
     
     # Core simulation timing
     growth_rate: float = 1.0 # How quickly each hyphal segment increases per unit time
