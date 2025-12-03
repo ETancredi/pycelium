@@ -39,7 +39,7 @@ from vis.plot3d import plot_mycel_3d
 from vis.analyser import SimulationStats, plot_stats
 from vis.nutrient_vis import plot_nutrient_field_2d, plot_nutrient_field_3d
 from vis.anisotropy_grid import AnisotropyGrid, plot_anisotropy_2d, plot_anisotropy_3d
-from vis.animate_growth import animate_growth
+from vis.animate_growth import animate_growth, animate_growth_2d
 from vis.plotly_3d_export import plot_mycel_3d_interactive
 
 # Post-sim analysis
@@ -331,12 +331,19 @@ def generate_outputs(mycel, components, output_dir="outputs"):
         export_tip_history(mycel, series_path)
 
     if opts.generate_mycelium_growth_mp4:
-        animate_growth(
-            csv_path=series_path,
-            save_path=f"{output_dir}/mycelium_growth.mp4",
-            interval=100
-        )
-        # If the CSV was only needed for MP4 and not requested to keep, remove it
+        if getattr(opts, "use_2d", False):
+            animate_growth_2d(
+                csv_path=series_path,
+                save_path=f"{output_dir}/mycelium_growth_2d.mp4",
+                interval=100,
+            )
+        else:
+            animate_growth(
+                csv_path=series_path,
+                save_path=f"{output_dir}/mycelium_growth.mp4",
+                interval=100,
+            )
+
         if not opts.generate_mycelium_time_series_csv:
             try:
                 os.remove(series_path)
