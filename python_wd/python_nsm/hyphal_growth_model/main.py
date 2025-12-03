@@ -72,8 +72,20 @@ def setup_simulation(opts):
     # Instantiate main simulation engine
     mycel = Mycel(opts)
 
-    # Helper to pick a random point on a sphere
-    def random_point_on_sphere(radius):
+    # Helpers to pick random seed positions
+    def random_point_on_circle(radius: float) -> MPoint:
+        """
+        2D helper: pick a point uniformly on a circle of given radius in the z=0 plane.
+        """
+        theta = random.uniform(0, 2 * math.pi)
+        x = radius * math.cos(theta)
+        y = radius * math.sin(theta)
+        return MPoint(round(x), round(y), 0.0)
+
+    def random_point_on_sphere(radius: float) -> MPoint:
+        """
+        3D helper: pick a point uniformly on a sphere of given radius.
+        """
         theta = random.uniform(0, 2 * math.pi)  # azimuthal angle
         phi = math.acos(random.uniform(-1, 1))  # polar angle
         x = radius * math.sin(phi) * math.cos(theta)
@@ -81,11 +93,16 @@ def setup_simulation(opts):
         z = radius * math.cos(phi)
         return MPoint(round(x), round(y), round(z))
 
-    # Seed initial two tips: one at origin, one at random sphere point
+    # Seed initial two tips:
+    #   - one at origin
+    #   - one at random point on a circle (2D) or sphere (3D)
     seed1 = MPoint(0, 0, 0)
-    seed2 = random_point_on_sphere(radius=1)
-    mycel.seed(seed1, seed2, color=opts.initial_color)
+    if getattr(opts, "use_2d", False):
+        seed2 = random_point_on_circle(radius=1.0)
+    else:
+        seed2 = random_point_on_sphere(radius=1.0)
 
+    mycel.seed(seed1, seed2, color=opts.initial_color)
     # Create orientator and field aggregator for tropism calculations
     orientator = Orientator(opts)
     aggregator = FieldAggregator()
