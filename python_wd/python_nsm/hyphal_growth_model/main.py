@@ -191,10 +191,12 @@ def step_simulation(mycel, components, step):
     aggregator.add_sections(mycel.get_all_segments(), strength=1.0, decay=1.5)
 
     # Compute new orientation for each tip using orientator
+    use_2d = getattr(opts, "use_2d", False)
+
     for tip in mycel.get_tips():
         tip.orientation = orientator.compute(tip)
 
-        # In 2D mode, force orinetation to lie in z=0 plane
+        # In 2D mode, force orientation to lie in the z=0 plane
         if use_2d:
             tip.orientation.coords[2] = 0.0
 
