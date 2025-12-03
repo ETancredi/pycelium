@@ -194,8 +194,18 @@ def step_simulation(mycel, components, step):
     for tip in mycel.get_tips():
         tip.orientation = orientator.compute(tip)
 
+        # In 2D mode, force orinetation to lie in z=0 plane
+        if use_2d:
+            tip.orientation.coords[2] = 0.0
+
     # Advance simulation by one time step (grow, branch, prune)
     mycel.step()
+
+    # In 2D mode, clamp all segment endpoints to z=0 (safety net)
+    if use_2d:
+        for seg in mycel.get_all_segments():
+            seg.start.coords[2] = 0.0
+            seg.end.coords[2] = 0.0
 
     # Update density grid counts from all segment ends
     grid.update_from_mycel(mycel)
