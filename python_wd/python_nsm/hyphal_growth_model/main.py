@@ -239,6 +239,7 @@ def generate_outputs(mycel, components, output_dir="outputs"):
     if opts.generate_mycelium_2d_png:
         plot_mycel(mycel, title="2D Projection", save_path=f"{output_dir}/mycelium_2d.png")
 
+    # 3D projections are suppressed in 2D mode
     if opts.generate_mycelium_3d_png:
         plot_mycel_3d(mycel, title="3D Projection", save_path=f"{output_dir}/mycelium_3d.png")
 
