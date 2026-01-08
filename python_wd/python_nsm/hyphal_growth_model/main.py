@@ -255,8 +255,6 @@ def generate_outputs(mycel, components, output_dir="outputs"):
         # Turn off 3D-only / 3D-heavy outputs
         if hasattr(opts, "generate_mycelium_3d_png"):
             opts.generate_mycelium_3d_png = False
-        if hasattr(opts, "generate_mycelium_3d_interactive_html"):
-            opts.generate_mycelium_3d_interactive_html = False
         if hasattr(opts, "generate_nutrient_3d_png"):
             opts.generate_nutrient_3d_png = False
         if hasattr(opts, "generate_anisotropy_3d_png"):
