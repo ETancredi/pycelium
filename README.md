@@ -6,13 +6,13 @@ A 3D simulation of fungal mycelium growth with support for GUI launching, CLI ba
 
 ## Features
 
-- 🌱 Realistic 3D mycelium growth simulation
-- 📊 Batch mode with parameter sweeping
-- 🖥️ GUI interface for live parameter tweaking
-- 🔁 Parallel batch processing with auto-scaling
-- 🎥 Visualisation & animation outputs (2D, 3D, video)
-- 👨‍👧‍👦 Lineage-tracking logic
-- 🧬 Spontaneous mutations visualisation
+- Realistic 3D mycelium growth simulation
+- Batch mode with parameter sweeping
+- GUI interface for live parameter tweaking
+- Parallel batch processing with auto-scaling
+- Visualisation & animation
+- Lineage-tracking logic
+- Mutational inheritance logic 
 
 ---
 
