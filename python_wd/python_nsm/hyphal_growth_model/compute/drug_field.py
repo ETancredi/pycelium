@@ -27,6 +27,7 @@ from dataclasses import dataclass, field  # Lightweight containers for field con
 from typing import Literal, Sequence  # Restricted string values and generic sequences
 
 import matplotlib.pyplot as plt  # Used only for optional PNG export of the final field
+from matplotlib.colors import LinearSegmentedColormap  # Custom white-to-dark-blue drug heatmap
 import numpy as np  # NumPy arrays and vectorised finite-difference diffusion
 
 from core.point import MPoint  # Pycelium point/vector class used for sampling tip positions
@@ -719,24 +720,59 @@ class DrugField2D:
         np.savetxt(path, self.concentration if array is None else array, delimiter=",", fmt="%.6f")
         logger.info("Drug field CSV exported: %s", path)
 
-    def export_png(self, path: str, cmap: str = "magma", array=None, title: str = "Final antifungal field") -> None:
+    def export_png(
+        self,
+        path: str,
+        cmap=None,
+        array=None,
+        title: str = "Final antifungal field",
+        vmax: float | None = None,
+    ) -> None:
         """
         Save a concentration array as a heatmap PNG.
+
+        The default colour map is intentionally single-hue:
+
+            no drug / 0 concentration  -> white
+            high drug                  -> dark blue
+
+        The optional vmax argument lets several simulations be plotted on the
+        same colour scale. For example, set drug_plot_max_concentration = 8.0
+        to make every heatmap use a 0..8xMIC range.
         """
+        # Export either the live/final concentration grid or a supplied snapshot.
         C = self.concentration if array is None else array
-        plt.figure(figsize=(7, 5))
-        plt.imshow(
+
+        # Build the requested single-shade antifungal colour map if the caller
+        # did not provide a custom Matplotlib colour map.
+        if cmap is None:
+            cmap = LinearSegmentedColormap.from_list(
+                "antifungal_white_to_dark_blue",
+                ["#ffffff", "#08306b"],
+            )
+
+        # Fix the lower colour limit at zero because negative drug is invalid.
+        # For the upper limit, use the user-requested value when provided;
+        # otherwise auto-scale to the current array while avoiding a zero range.
+        if vmax is None:
+            finite_values = np.asarray(C)[np.isfinite(C)]
+            vmax = max(float(np.max(finite_values)), 1e-9) if finite_values.size else 1.0
+
+        fig, ax = plt.subplots(figsize=(7, 5))
+        image = ax.imshow(
             C,
             origin="lower",
             extent=[self.config.x_min, self.config.x_max, self.config.y_min, self.config.y_max],
-            aspect="auto",
+            aspect="equal",
             cmap=cmap,
+            vmin=0.0,
+            vmax=vmax,
         )
-        plt.colorbar(label="Antifungal concentration")
-        plt.xlabel("x")
-        plt.ylabel("y")
-        plt.title(title)
-        plt.tight_layout()
-        plt.savefig(path, dpi=200)
-        plt.close()
+        fig.colorbar(image, ax=ax, label="Antifungal concentration")
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_title(title)
+        fig.tight_layout()
+        fig.savefig(path, dpi=200)
+        plt.close(fig)
         logger.info("Drug field PNG exported: %s", path)

@@ -106,6 +106,7 @@ class Options:
     generate_drug_field_initial_npy: bool = True # Export the initial antifungal grid before diffusion/growth
     generate_drug_field_initial_csv: bool = True # Export the initial antifungal grid before diffusion/growth as CSV
     generate_drug_field_initial_png: bool = True # Export the initial antifungal grid before diffusion/growth as PNG
+    drug_plot_max_concentration: Optional[float] = None # Optional shared vmax for drug heatmaps/overlays; e.g. 8.0 for 0..8xMIC plots
 
     # Gravitropism curvature (angle-based)
     gravi_angle_start: float = 100.0 # Min. angle (degrees) at which gravity begins to influence curvature
@@ -160,6 +161,7 @@ class Options:
     generate_branching_angles_png: bool = True
     generate_branching_angles_csv: bool = True
     generate_mycelium_2d_png: bool = True
+    generate_mycelium_drug_overlay_png: bool = True # If True, export mycelium_drug_overlay.png when a drug field is enabled
     generate_mycelium_3d_png: bool = True
     generate_mycelium_3d_interactive_html: bool = True
     generate_mycelium_final_csv: bool = True

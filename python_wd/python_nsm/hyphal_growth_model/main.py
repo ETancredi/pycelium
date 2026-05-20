@@ -36,6 +36,7 @@ from control.runtime_mutator import RuntimeMutator
 # Visualisation utilities
 from vis.density_map import DensityGrid, plot_density
 from vis.plot2d import plot_mycel
+from vis.drug_overlay import plot_mycelium_on_drug_field
 from vis.plot3d import plot_mycel_3d
 from vis.analyser import SimulationStats, plot_stats
 from vis.nutrient_vis import plot_nutrient_field_2d, plot_nutrient_field_3d
@@ -448,6 +449,19 @@ def generate_outputs(mycel, components, output_dir="outputs"):
     if opts.generate_density_map_csv:
         export_grid_to_csv(grid, f"{output_dir}/density_map.csv")
 
+    # Optional combined visualisation: final mycelium over the final drug field.
+    # This keeps mycelium_2d.png and drug_field_final.png as separate outputs,
+    # but adds a contextual figure showing their interaction.
+    drug_plot_vmax = getattr(opts, "drug_plot_max_concentration", None)
+    if drug_field is not None and getattr(opts, "generate_mycelium_drug_overlay_png", False):
+        plot_mycelium_on_drug_field(
+            mycel,
+            drug_field,
+            save_path=f"{output_dir}/mycelium_drug_overlay.png",
+            title="Mycelium on antifungal field",
+            vmax=drug_plot_vmax,
+        )
+
     # Antifungal field exports. These are only written when the drug field is
     # enabled and the corresponding output toggles are True. Initial-field
     # exports are especially useful for control tests because the final heatmap
@@ -471,6 +485,7 @@ def generate_outputs(mycel, components, output_dir="outputs"):
                     f"{output_dir}/drug_field_initial.png",
                     array=initial,
                     title="Initial antifungal field",
+                    vmax=drug_plot_vmax,
                 )
 
         if getattr(opts, "generate_drug_field_npy", False):
@@ -478,7 +493,7 @@ def generate_outputs(mycel, components, output_dir="outputs"):
         if getattr(opts, "generate_drug_field_csv", False):
             drug_field.export_csv(f"{output_dir}/drug_field_final.csv")
         if getattr(opts, "generate_drug_field_png", False):
-            drug_field.export_png(f"{output_dir}/drug_field_final.png")
+            drug_field.export_png(f"{output_dir}/drug_field_final.png", vmax=drug_plot_vmax)
 
     # Time-series CSV + animation (dependency handled)
     series_path = f"{output_dir}/mycelium_time_series.csv"
