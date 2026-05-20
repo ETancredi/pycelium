@@ -39,7 +39,7 @@ from vis.plot3d import plot_mycel_3d
 from vis.analyser import SimulationStats, plot_stats
 from vis.nutrient_vis import plot_nutrient_field_2d, plot_nutrient_field_3d
 from vis.anisotropy_grid import AnisotropyGrid, plot_anisotropy_2d, plot_anisotropy_3d
-from vis.animate_growth import animate_growth
+from vis.animate_growth import animate_growth, animate_growth_2d
 from vis.plotly_3d_export import plot_mycel_3d_interactive
 
 # Post-sim analysis
@@ -72,8 +72,20 @@ def setup_simulation(opts):
     # Instantiate main simulation engine
     mycel = Mycel(opts)
 
-    # Helper to pick a random point on a sphere
-    def random_point_on_sphere(radius):
+    # Helpers to pick random seed positions
+    def random_point_on_circle(radius: float) -> MPoint:
+        """
+        2D helper: pick a point uniformly on a circle of given radius in the z=0 plane.
+        """
+        theta = random.uniform(0, 2 * math.pi)
+        x = radius * math.cos(theta)
+        y = radius * math.sin(theta)
+        return MPoint(round(x), round(y), 0.0)
+
+    def random_point_on_sphere(radius: float) -> MPoint:
+        """
+        3D helper: pick a point uniformly on a sphere of given radius.
+        """
         theta = random.uniform(0, 2 * math.pi)  # azimuthal angle
         phi = math.acos(random.uniform(-1, 1))  # polar angle
         x = radius * math.sin(phi) * math.cos(theta)
@@ -81,11 +93,16 @@ def setup_simulation(opts):
         z = radius * math.cos(phi)
         return MPoint(round(x), round(y), round(z))
 
-    # Seed initial two tips: one at origin, one at random sphere point
+    # Seed initial two tips:
+    #   - one at origin
+    #   - one at random point on a circle (2D) or sphere (3D)
     seed1 = MPoint(0, 0, 0)
-    seed2 = random_point_on_sphere(radius=1)
-    mycel.seed(seed1, seed2, color=opts.initial_color)
+    if getattr(opts, "use_2d", False):
+        seed2 = random_point_on_circle(radius=1.0)
+    else:
+        seed2 = random_point_on_sphere(radius=1.0)
 
+    mycel.seed(seed1, seed2, color=opts.initial_color)
     # Create orientator and field aggregator for tropism calculations
     orientator = Orientator(opts)
     aggregator = FieldAggregator()
@@ -109,14 +126,16 @@ def setup_simulation(opts):
 
     orientator.set_field_source(aggregator)
 
-    # Initialise density grid for avoidance behaviours
+    # Initialise density grid for avoidance behaviours (already 2D)
     grid = DensityGrid(width=100, height=100, resolution=1.0)
     orientator.set_density_grid(grid)
 
     # Optionally set up anisotropy grid if enabled
     anisotropy_grid = None
     if opts.anisotropy_enabled:
-        anisotropy_grid = AnisotropyGrid(width=100, height=100, depth=100, resolution=10.0)
+        # In 2D mode, squash the grid into a single layer in z to save memory/compute
+        depth = 1 if getattr(opts, "use_2d", False) else 100
+        anisotropy_grid = AnisotropyGrid(width=100, height=100, depth=depth, resolution=10.0)
         anisotropy_grid.set_uniform_direction(MPoint(*opts.anisotropy_vector))
         orientator.set_anisotropy_grid(anisotropy_grid)
 
@@ -172,11 +191,23 @@ def step_simulation(mycel, components, step):
     aggregator.add_sections(mycel.get_all_segments(), strength=1.0, decay=1.5)
 
     # Compute new orientation for each tip using orientator
+    use_2d = getattr(opts, "use_2d", False)
+
     for tip in mycel.get_tips():
         tip.orientation = orientator.compute(tip)
 
+        # In 2D mode, force orientation to lie in the z=0 plane
+        if use_2d:
+            tip.orientation.coords[2] = 0.0
+
     # Advance simulation by one time step (grow, branch, prune)
     mycel.step()
+
+    # In 2D mode, clamp all segment endpoints to z=0 (safety net)
+    if use_2d:
+        for seg in mycel.get_all_segments():
+            seg.start.coords[2] = 0.0
+            seg.end.coords[2] = 0.0
 
     # Update density grid counts from all segment ends
     grid.update_from_mycel(mycel)
@@ -211,12 +242,33 @@ def generate_outputs(mycel, components, output_dir="outputs"):
     opts = components["opts"]
     anisotropy_grid = components.get("anisotropy_grid", None)
 
+        # In 2D mode, prefer 2D visualisations and disable 3D-heavy outputs
+    if getattr(opts, "use_2d", False):
+        # Ensure 2D outputs are on
+        opts.generate_mycelium_2d_png = True
+        # Nutrient/aniso 2D defaults – keep whatever the user set, but if missing assume True
+        if hasattr(opts, "generate_nutrient_2d_png"):
+            opts.generate_nutrient_2d_png = True
+        if hasattr(opts, "generate_anisotropy_2d_png"):
+            opts.generate_anisotropy_2d_png = True
+
+        # Turn off 3D-only / 3D-heavy outputs
+        if hasattr(opts, "generate_mycelium_3d_png"):
+            opts.generate_mycelium_3d_png = False
+        if hasattr(opts, "generate_nutrient_3d_png"):
+            opts.generate_nutrient_3d_png = False
+        if hasattr(opts, "generate_anisotropy_3d_png"):
+            opts.generate_anisotropy_3d_png = False
+        if hasattr(opts, "generate_obj_mesh"):
+            opts.generate_obj_mesh = False
+
     logger.info(f"Saving selected outputs to '{output_dir}'...")
 
     # --- Core plots ---
     if opts.generate_mycelium_2d_png:
         plot_mycel(mycel, title="2D Projection", save_path=f"{output_dir}/mycelium_2d.png")
 
+    # 3D projections are suppressed in 2D mode
     if opts.generate_mycelium_3d_png:
         plot_mycel_3d(mycel, title="3D Projection", save_path=f"{output_dir}/mycelium_3d.png")
 
@@ -277,12 +329,19 @@ def generate_outputs(mycel, components, output_dir="outputs"):
         export_tip_history(mycel, series_path)
 
     if opts.generate_mycelium_growth_mp4:
-        animate_growth(
-            csv_path=series_path,
-            save_path=f"{output_dir}/mycelium_growth.mp4",
-            interval=100
-        )
-        # If the CSV was only needed for MP4 and not requested to keep, remove it
+        if getattr(opts, "use_2d", False):
+            animate_growth_2d(
+                csv_path=series_path,
+                save_path=f"{output_dir}/mycelium_growth_2d.mp4",
+                interval=100,
+            )
+        else:
+            animate_growth(
+                csv_path=series_path,
+                save_path=f"{output_dir}/mycelium_growth.mp4",
+                interval=100,
+            )
+
         if not opts.generate_mycelium_time_series_csv:
             try:
                 os.remove(series_path)

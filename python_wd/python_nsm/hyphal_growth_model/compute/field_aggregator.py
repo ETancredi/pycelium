@@ -16,6 +16,7 @@ class FieldAggregator:
 
     def __init__(self):
         self.sources: List[FieldFinder] = [] # List of all field sources to consider
+        self.section_sources: List[SectFieldFinder] = []
         self.options = None # Placeholder for optional configuration 
 
     # Sets global field computation options (from simulation settings)
@@ -52,28 +53,42 @@ class FieldAggregator:
 
         return total_field, total_grad.normalise() # Return scalar + unit gradient vector
 
-    # Computes an approximate curvature (second spatial derivative) of the scalar field
-    def compute_field_curvature(self, point: MPoint, epsilon=1.0) -> float:
+    def compute_field_curvature(self, point: MPoint, epsilon: float = 1.0) -> float:
         """
         Approximate curvature (Laplacian) of the scalar field at a point
         using finite differences. Returns a scalar.
+
+        In 3D: 6-point stencil (±x, ±y, ±z)
+        In 2D: 4-point stencil (±x, ±y), staying in the z=0 plane.
         """
-        base_value, _ = self.compute_field(point) # Field value at central point
+        base_value, _ = self.compute_field(point)  # Field value at central point
 
-        # Define symmetric offsets along X, Y, and Z axes
-        offsets = [
-            MPoint(epsilon, 0, 0), MPoint(-epsilon, 0, 0),
-            MPoint(0, epsilon, 0), MPoint(0, -epsilon, 0),
-            MPoint(0, 0, epsilon), MPoint(0, 0, -epsilon),
-        ]
+        # Decide whether we're in 2D or 3D
+        use_2d = False
+        if hasattr(self, "opts") and self.opts is not None:
+            use_2d = getattr(self.opts, "use_2d", False)
 
-        laplace_sum = 0.0 # Sum of second differences
+        if use_2d:
+            # 2D: four neighbours in the plane
+            offsets = [
+                MPoint(epsilon, 0, 0),  MPoint(-epsilon, 0, 0),
+                MPoint(0, epsilon, 0),  MPoint(0, -epsilon, 0),
+            ]
+        else:
+            # 3D: six neighbours along x, y, z
+            offsets = [
+                MPoint(epsilon, 0, 0),  MPoint(-epsilon, 0, 0),
+                MPoint(0, epsilon, 0),  MPoint(0, -epsilon, 0),
+                MPoint(0, 0, epsilon),  MPoint(0, 0, -epsilon),
+            ]
+
+        laplace_sum = 0.0  # Sum of second differences
 
         # Approximate Laplacian: ∇²f ≈ sum of (f(x+ε) - f(x))
         for offset in offsets:
-            neighbor = point.copy().add(offset) # Create nearby point
-            neighbor_value, _ = self.compute_field(neighbor) # Get field value at offset
-            laplace_sum += neighbor_value - base_value # Difference from center
+            neighbor = point.copy().add(offset)            # nearby point
+            neighbor_value, _ = self.compute_field(neighbor)
+            laplace_sum += neighbor_value - base_value     # difference from center
 
-        curvature = laplace_sum / (epsilon ** 2) # Scale by ε² to approximate curvature
-        return curvature # Return scalar field curvature at the point
+        curvature = laplace_sum / (epsilon ** 2)  # scale by ε²
+        return curvature
