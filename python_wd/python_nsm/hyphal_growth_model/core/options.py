@@ -58,6 +58,35 @@ class Options:
     density_from_branches: bool = True # Include branch (non-tip segment) contributions
     density_from_all: bool = True # Include all segments when computing density       
 
+    # Antifungal / drug diffusion field
+    drug_field_enabled: bool = False # If True, simulate a diffusing antifungal field alongside mycelial growth
+    drug_field_x_min: float = -50.0 # Minimum x-coordinate covered by the antifungal grid
+    drug_field_x_max: float = 50.0 # Maximum x-coordinate covered by the antifungal grid
+    drug_field_y_min: float = -50.0 # Minimum y-coordinate covered by the antifungal grid
+    drug_field_y_max: float = 50.0 # Maximum y-coordinate covered by the antifungal grid
+    drug_field_dx: float = 1.0 # Antifungal grid spacing, in the same distance units as MPoint
+
+    drug_diffusion_coefficient: float = 0.05 # Diffusion coefficient D for the antifungal field
+    drug_diffusion_dt: float = 1.0 # Diffusion time advanced per Pycelium step, usually matching time_step
+    drug_diffusion_substeps: int = 1 # Number of numerical diffusion substeps per Pycelium step
+    drug_decay_rate: float = 0.0 # Optional first-order drug degradation rate; 0 disables degradation
+
+    drug_boundary_mode: str = "noflux" # Edge mode: noflux, absorbing, or constant
+    drug_boundary_value: float = 0.0 # Fixed edge concentration used only when drug_boundary_mode == constant
+    drug_initial_background_concentration: float = 0.0 # Starting concentration assigned to the whole grid
+
+    drug_use_vertical_sections: bool = False # If True, initialise the field as megaplate-like vertical concentration bands
+    drug_initial_x_edges: List[float] = field(default_factory=lambda: [-50.0, -25.0, 0.0, 25.0, 50.0]) # X boundaries for vertical drug bands
+    drug_initial_concentrations: List[float] = field(default_factory=lambda: [0.0, 0.5, 1.0, 8.0]) # Concentration in each vertical band
+
+    drug_wildtype_mic: float = 1.0 # Baseline MIC-like tolerance used by non-mutant tips
+    drug_hill_coefficient: float = 4.0 # Steepness of the concentration-vs-growth inhibition curve
+    drug_min_growth_multiplier: float = 0.0 # Lower bound on growth under very high drug
+
+    generate_drug_field_npy: bool = True # Export final antifungal grid as a NumPy binary array
+    generate_drug_field_csv: bool = True # Export final antifungal grid as a CSV file
+    generate_drug_field_png: bool = True # Export final antifungal grid as a heatmap image
+
     # Gravitropism curvature (angle-based)
     gravi_angle_start: float = 100.0 # Min. angle (degrees) at which gravity begins to influence curvature
     gravi_angle_end: float = 500.0 # Angle above which maximum gravitropic curvature is applied
