@@ -38,7 +38,7 @@ class Mycel:
         root.set_field_aggregator(None)     # Disable field aggregator until configured
         self.sections.append(root)          # Add seed to the section list
 
-    def step(self):
+    def step(self, drug_field=None):
         """Advance the simulation by one time step:
         1. Grow existing segments
         2. Apply destructor checks
@@ -46,6 +46,12 @@ class Mycel:
         4. Record data snapshots
         5. Prune excess tips if needed
         6. Update histories and increment time.
+
+        Args:
+            drug_field:
+                Optional DrugField2D instance. When supplied, each active tip
+                samples local antifungal concentration and its growth rate is
+                reduced according to the configured MIC / Hill-response model.
         """
         new_sections = []  # Hold branches created this step
 
@@ -59,8 +65,15 @@ class Mycel:
             if section.is_dead:  # Skip dead segments
                 continue
 
-            # Grow by growth_rate over time_step
-            section.grow(self.options.growth_rate, self.options.time_step)
+            # Compute the effective local growth rate for this section.
+            # If no drug field is present, this simply returns options.growth_rate.
+            # If drug is enabled, the tip samples local concentration and receives
+            # a Hill-response growth multiplier before Section.grow() applies its
+            # existing length-scaled growth logic.
+            effective_growth_rate = self._drug_adjusted_growth_rate(section, drug_field)
+
+            # Grow by effective_growth_rate over time_step.
+            section.grow(effective_growth_rate, self.options.time_step)
             section.update()  # Update internal state (e.g. age increment, orientation adjustments)
 
             # Debug trace for living tips
@@ -155,7 +168,10 @@ class Mycel:
                 "y": tip.end.coords[1],         # Y-coord
                 "z": tip.end.coords[2],         # Z-coord
                 "age": tip.age,                 # Age of tip segment
-                "length": tip.length            # Length of tip segment
+                "length": tip.length,           # Length of tip segment
+                "drug_mic": getattr(tip, "drug_mic", None), # MIC-like tolerance for this tip
+                "drug_concentration": getattr(tip, "last_drug_concentration", None), # Last sampled drug concentration
+                "drug_growth_multiplier": getattr(tip, "last_drug_growth_multiplier", None) # Last drug growth multiplier
             }
             for tip in self.get_tips()          # Iterate over active tips
         ]
@@ -189,6 +205,53 @@ class Mycel:
         total_biomass = sum(sec.length for sec in self.sections if not sec.is_dead)
         self.biomass_history.append(total_biomass)
         logger.debug("STEP END: active_tips=%d | biomass=%.2f", len(self.get_tips()), total_biomass)
+
+    def _drug_adjusted_growth_rate(self, section: Section, drug_field=None) -> float:
+        """
+        Return the local growth rate after antifungal inhibition.
+
+        The intrinsic rate comes from options.growth_rate. When a drug field is
+        active, the section samples concentration at its tip endpoint, then a
+        Hill-style concentration response converts that concentration into a
+        multiplier between drug_min_growth_multiplier and 1.0.
+        """
+        # Start from the global intrinsic growth rate used elsewhere in Pycelium.
+        growth_rate = self.options.growth_rate
+
+        # Non-tip or dead sections cannot grow; Section.grow() will also guard
+        # this, but returning the base rate avoids unnecessary drug sampling.
+        if not section.is_tip or section.is_dead:
+            return growth_rate
+
+        # If drug is disabled, keep explicit diagnostic attributes so downstream
+        # CSV exports have consistent columns.
+        if drug_field is None:
+            section.last_drug_concentration = 0.0
+            section.last_drug_growth_multiplier = 1.0
+            return growth_rate
+
+        # Sample local drug concentration at the current growing tip endpoint.
+        local_concentration = drug_field.sample(section.end)
+
+        # MIC is currently inherited per Section and seeded from opts.drug_wildtype_mic.
+        # Later mutation logic can alter section.drug_mic in newly produced branches.
+        mic = getattr(section, "drug_mic", getattr(self.options, "drug_wildtype_mic", 1.0))
+
+        # Convert concentration into a growth-rate multiplier.
+        growth_multiplier = drug_field.growth_multiplier(
+            concentration=local_concentration,
+            mic=mic,
+            hill_coefficient=getattr(self.options, "drug_hill_coefficient", 4.0),
+            min_multiplier=getattr(self.options, "drug_min_growth_multiplier", 0.0),
+        )
+
+        # Store diagnostics on the section so exports can reconstruct the local
+        # drug environment experienced by each final tip/segment.
+        section.last_drug_concentration = local_concentration
+        section.last_drug_growth_multiplier = growth_multiplier
+
+        # Return the locally inhibited growth rate.
+        return growth_rate * growth_multiplier
 
     def get_tips(self):
         """Return list of sections that are tips and not dead."""
