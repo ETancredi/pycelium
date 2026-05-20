@@ -20,6 +20,7 @@ from tropisms.nutrient_field_finder import NutrientFieldFinder
 
 # Field aggregation across various sources
 from compute.field_aggregator import FieldAggregator
+from compute.drug_field import DrugField2D  # Diffusing antifungal field sampled by tips during growth
 
 # I/O utils: checkpointing, auto-stop, grid-exports, data exporters
 from io_utils.checkpoint import CheckpointSaver
@@ -57,7 +58,8 @@ def setup_simulation(opts):
         create Mycel instance,
         configure tropisms,
         grids,
-        checkpoints.
+        checkpoints,
+        optional drug field,
         + other components.
     Returns:
         Mycel, components_dict
@@ -139,6 +141,29 @@ def setup_simulation(opts):
         anisotropy_grid.set_uniform_direction(MPoint(*opts.anisotropy_vector))
         orientator.set_anisotropy_grid(anisotropy_grid)
 
+    # Optionally initialise the antifungal field.
+    # This field is kept separate from the density grid: density controls local
+    # crowding, whereas drug concentration controls pharmacological inhibition.
+    drug_field = None
+    if getattr(opts, "drug_field_enabled", False):
+        # Build the finite-difference drug field from the Options dataclass.
+        drug_field = DrugField2D.from_options(opts)
+
+        # Optional convenience initial condition for megaplate-style vertical
+        # concentration bands. This simply sets the starting concentration; the
+        # bands will then diffuse during the simulation.
+        if getattr(opts, "drug_use_vertical_sections", False):
+            drug_field.set_vertical_sections(
+                x_edges=getattr(opts, "drug_initial_x_edges", []),
+                concentrations=getattr(opts, "drug_initial_concentrations", []),
+            )
+
+        logger.info(
+            "Drug field enabled: shape=%s alpha=%.4f",
+            drug_field.concentration.shape,
+            drug_field.alpha,
+        )
+
     # Determine output directory from environment (batch or default)
     output_dir = os.getenv("BATCH_OUTPUT_DIR", "outputs")
     logger.info(f"Output dir: {output_dir}")
@@ -162,13 +187,15 @@ def setup_simulation(opts):
         "mutator": mutator,
         "stats": stats,
         "opts": opts,
-        "anisotropy_grid": anisotropy_grid
+        "anisotropy_grid": anisotropy_grid,
+        "drug_field": drug_field
     }
 
 
 def step_simulation(mycel, components, step):
     """
     Perform one timestep:
+        Diffuse antifungal field if enabled,
         Update tropism fields,
         Apply orientator,
         Step the Mycel model,
@@ -185,6 +212,13 @@ def step_simulation(mycel, components, step):
     mutator = components["mutator"]
     stats = components["stats"]
     opts = components["opts"]
+    drug_field = components.get("drug_field", None)
+
+    # Let the antifungal field diffuse before any hyphal tip grows this step.
+    # This ordering matches the intended biology: tips respond to the current
+    # local concentration after environmental diffusion has occurred.
+    if drug_field is not None:
+        drug_field.diffuse_once()
 
     # Clear previous field sources and re-add all sections as SectFieldFinders
     aggregator.sources.clear()
@@ -200,8 +234,9 @@ def step_simulation(mycel, components, step):
         if use_2d:
             tip.orientation.coords[2] = 0.0
 
-    # Advance simulation by one time step (grow, branch, prune)
-    mycel.step()
+    # Advance simulation by one time step (grow, branch, prune).
+    # The mycelium samples drug_field locally at each active tip when present.
+    mycel.step(drug_field=drug_field)
 
     # In 2D mode, clamp all segment endpoints to z=0 (safety net)
     if use_2d:
@@ -241,6 +276,7 @@ def generate_outputs(mycel, components, output_dir="outputs"):
     stats = components["stats"]
     opts = components["opts"]
     anisotropy_grid = components.get("anisotropy_grid", None)
+    drug_field = components.get("drug_field", None)
 
         # In 2D mode, prefer 2D visualisations and disable 3D-heavy outputs
     if getattr(opts, "use_2d", False):
@@ -320,6 +356,16 @@ def generate_outputs(mycel, components, output_dir="outputs"):
 
     if opts.generate_density_map_csv:
         export_grid_to_csv(grid, f"{output_dir}/density_map.csv")
+
+    # Antifungal field exports. These are only written when the drug field is
+    # enabled and the corresponding output toggles are True.
+    if drug_field is not None:
+        if getattr(opts, "generate_drug_field_npy", False):
+            drug_field.export_npy(f"{output_dir}/drug_field_final.npy")
+        if getattr(opts, "generate_drug_field_csv", False):
+            drug_field.export_csv(f"{output_dir}/drug_field_final.csv")
+        if getattr(opts, "generate_drug_field_png", False):
+            drug_field.export_png(f"{output_dir}/drug_field_final.png")
 
     # Time-series CSV + animation (dependency handled)
     series_path = f"{output_dir}/mycelium_time_series.csv"
