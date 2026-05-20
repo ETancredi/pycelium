@@ -70,6 +70,15 @@ class Section:
         else:
             self.color = color # Child branch colour is explicitly provided
 
+        # Antifungal tolerance carried by this section.
+        # At this stage it is simply inherited from the parent or seeded from
+        # opts.drug_wildtype_mic. In the next mutation pass, this value can be
+        # changed in daughter branches to model MIC-like resistance evolution.
+        if parent is None:
+            self.drug_mic = getattr(opts, "drug_wildtype_mic", 1.0)
+        else:
+            self.drug_mic = getattr(parent, "drug_mic", getattr(opts, "drug_wildtype_mic", 1.0))
+
     def set_field_aggregator(self, aggregator):
         """Assign a FieldAggregator for computing fields at this segment."""
         self.field_aggregator = aggregator
