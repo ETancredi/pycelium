@@ -144,6 +144,12 @@ class DrugField2D:
             dtype=np.float64,
         )
 
+        # Optional fixed source mask. This is used by square-perimeter fields where
+        # the outer drug-loaded band should behave like a maintained reservoir.
+        # If this remains None, all cells are free to diffuse normally after setup.
+        self.fixed_source_mask = None
+        self.fixed_source_value = None
+
         # Confirm explicit scheme stability before the first diffusion step.
         self._validate_stability()
 
@@ -288,6 +294,22 @@ class DrugField2D:
         else:
             raise ValueError(f"Unknown drug boundary mode: {boundary.mode}")
 
+    def enforce_fixed_sources(self) -> None:
+        """
+        Re-impose any maintained antifungal source cells.
+
+        For an outside-in square field, the outer square frame can either be an
+        initial bolus that is allowed to dilute, or a maintained source that is
+        reset to the source concentration after every diffusion substep. This
+        method implements the maintained-source behaviour when configured.
+        """
+        # If no maintained source has been configured, there is nothing to do.
+        if self.fixed_source_mask is None:
+            return
+
+        # Refill all source cells to the configured concentration.
+        self.concentration[self.fixed_source_mask] = self.fixed_source_value
+
     def diffuse_once(self) -> None:
         """
         Advance the antifungal field by one Pycelium-level diffusion step.
@@ -304,8 +326,11 @@ class DrugField2D:
 
         # Perform as many numerical substeps as requested.
         for _ in range(self.config.diffusion_substeps):
-            # Enforce boundary conditions before computing the Laplacian.
+            # Enforce boundary conditions first, then fixed source cells. Source
+            # cells get final precedence so a maintained outside perimeter remains
+            # loaded even when it touches a no-flux plate edge.
             self.apply_boundaries()
+            self.enforce_fixed_sources()
 
             # Work from the old grid and write into a separate new grid to avoid
             # order-dependent updates.
@@ -331,9 +356,11 @@ class DrugField2D:
             # Drug concentration cannot be negative.
             np.maximum(new, 0.0, out=new)
 
-            # Swap in the updated grid and re-apply boundaries to finish the substep.
+            # Swap in the updated grid. Apply edge conditions, then refill any
+            # maintained source so the outside square frame remains a reservoir.
             self.concentration = new
             self.apply_boundaries()
+            self.enforce_fixed_sources()
 
     def set_rectangle(
         self,
@@ -358,6 +385,80 @@ class DrugField2D:
 
         # Keep boundaries consistent after changing the grid.
         self.apply_boundaries()
+
+    def set_square_perimeter_source(
+        self,
+        border_width: float,
+        source_concentration: float,
+        interior_concentration: float | None = None,
+        maintain_source: bool = True,
+    ) -> None:
+        """
+        Initialise an outside-in square antifungal field.
+
+        The outer square frame is set to source_concentration and the centre can
+        optionally be reset to interior_concentration first. Diffusion then moves
+        drug inward from all four sides, rather than from right to left as in the
+        megaplate-style vertical-section setup.
+
+        Args:
+            border_width:
+                Physical width of the drug-loaded outer frame, in the same
+                coordinate units as the Pycelium simulation.
+            source_concentration:
+                Antifungal concentration assigned to the outer square frame.
+            interior_concentration:
+                Optional concentration assigned to the entire field before the
+                perimeter is painted on. Use 0.0 for a drug-free centre.
+            maintain_source:
+                If True, the outer frame is reset to source_concentration after
+                every diffusion substep, mimicking a replenished source/reservoir.
+                If False, it is only an initial condition and will dilute over time.
+        """
+        # Validate the requested square-frame width. A non-positive width would
+        # produce no source region and make the option misleading.
+        if border_width <= 0.0:
+            raise ValueError("drug_square_perimeter_width must be > 0.")
+
+        # Optionally reset the full field first. For the outside-in test config,
+        # this makes the centre initially drug-free.
+        if interior_concentration is not None:
+            self.concentration[:, :] = float(interior_concentration)
+
+        # Work out distance from each grid coordinate to its nearest field edge.
+        x_dist_to_edge = np.minimum(
+            self.x_values - self.config.x_min,
+            self.config.x_max - self.x_values,
+        )
+        y_dist_to_edge = np.minimum(
+            self.y_values - self.config.y_min,
+            self.config.y_max - self.y_values,
+        )
+
+        # A cell belongs to the square source frame if it is within border_width
+        # of any of the four outer edges. np.ix_ is not needed here because the
+        # row/column masks are broadcast to a full 2D mask.
+        source_mask = (
+            (x_dist_to_edge[None, :] <= border_width)
+            | (y_dist_to_edge[:, None] <= border_width)
+        )
+
+        # Paint the outer square frame onto the field.
+        self.concentration[source_mask] = float(source_concentration)
+
+        # Either store the mask as a maintained source, or clear any previous
+        # maintained source so this acts as a one-off initial condition.
+        if maintain_source:
+            self.fixed_source_mask = source_mask
+            self.fixed_source_value = float(source_concentration)
+        else:
+            self.fixed_source_mask = None
+            self.fixed_source_value = None
+
+        # Keep the source and boundaries consistent immediately after setup.
+        # Source cells are applied last so the outside frame remains loaded.
+        self.apply_boundaries()
+        self.enforce_fixed_sources()
 
     def set_vertical_sections(
         self,
