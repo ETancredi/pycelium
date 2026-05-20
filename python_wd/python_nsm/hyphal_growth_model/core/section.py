@@ -70,6 +70,23 @@ class Section:
         else:
             self.color = color # Child branch colour is explicitly provided
 
+        # Antifungal tolerance carried by this section.
+        # At this stage it is simply inherited from the parent or seeded from
+        # opts.drug_wildtype_mic. In the next mutation pass, this value can be
+        # changed in daughter branches to model MIC-like resistance evolution.
+        if parent is None:
+            self.drug_mic = getattr(opts, "drug_wildtype_mic", 1.0)
+        else:
+            self.drug_mic = getattr(parent, "drug_mic", getattr(opts, "drug_wildtype_mic", 1.0))
+
+        # Antifungal response diagnostics. These are refreshed during Mycel.step()
+        # whenever a drug field is active, then exported to CSV for analysis.
+        self.last_drug_concentration = 0.0 # Local antifungal concentration last sampled by this tip
+        self.last_drug_growth_multiplier = 1.0 # Applied growth multiplier after clamping non-positive rates
+        self.last_drug_raw_growth_rate = getattr(opts, "growth_rate", 1.0) # Signed Ψ from the response model
+        self.last_drug_effective_growth_rate = getattr(opts, "growth_rate", 1.0) # Non-negative rate passed to grow()
+        self.drug_growth_stalled = False # True when drug prevented extension this step without killing the tip
+
     def set_field_aggregator(self, aggregator):
         """Assign a FieldAggregator for computing fields at this segment."""
         self.field_aggregator = aggregator

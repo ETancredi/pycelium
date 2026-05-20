@@ -20,6 +20,7 @@ from tropisms.nutrient_field_finder import NutrientFieldFinder
 
 # Field aggregation across various sources
 from compute.field_aggregator import FieldAggregator
+from compute.drug_field import DrugField2D  # Diffusing antifungal field sampled by tips during growth
 
 # I/O utils: checkpointing, auto-stop, grid-exports, data exporters
 from io_utils.checkpoint import CheckpointSaver
@@ -57,7 +58,8 @@ def setup_simulation(opts):
         create Mycel instance,
         configure tropisms,
         grids,
-        checkpoints.
+        checkpoints,
+        optional drug field,
         + other components.
     Returns:
         Mycel, components_dict
@@ -139,6 +141,120 @@ def setup_simulation(opts):
         anisotropy_grid.set_uniform_direction(MPoint(*opts.anisotropy_vector))
         orientator.set_anisotropy_grid(anisotropy_grid)
 
+    # Optionally initialise the antifungal field.
+    # This field is kept separate from the density grid: density controls local
+    # crowding, whereas drug concentration controls pharmacological inhibition.
+    drug_field = None
+    if getattr(opts, "drug_field_enabled", False):
+        # Build the finite-difference drug field from the Options dataclass.
+        drug_field = DrugField2D.from_options(opts)
+
+        # A single explicit initial-condition selector is safer than relying on
+        # several booleans at once. The older booleans still work when
+        # drug_initial_condition == "legacy", but new test configs should use:
+        #   uniform, vertical_sections, or square_perimeter.
+        drug_initial_condition = str(getattr(opts, "drug_initial_condition", "legacy")).strip().lower()
+
+        if drug_initial_condition in {"uniform", "background", "none"}:
+            # Nothing else to paint: DrugField2D.from_options() already filled
+            # the full grid with drug_initial_background_concentration.
+            pass
+
+        elif drug_initial_condition == "vertical_sections":
+            drug_field.set_vertical_sections(
+                x_edges=getattr(opts, "drug_initial_x_edges", []),
+                concentrations=getattr(opts, "drug_initial_concentrations", []),
+            )
+
+        elif drug_initial_condition == "square_perimeter":
+            drug_field.set_square_perimeter_source(
+                border_width=getattr(opts, "drug_square_perimeter_width", 10.0),
+                source_concentration=getattr(opts, "drug_square_perimeter_concentration", 8.0),
+                interior_concentration=getattr(opts, "drug_square_interior_concentration", 0.0),
+                maintain_source=getattr(opts, "drug_square_maintain_perimeter", True),
+            )
+
+        elif drug_initial_condition == "legacy":
+            # Backward-compatible path for configs made before the explicit mode
+            # selector existed. If both legacy switches are True, the square
+            # perimeter is applied after vertical sections and therefore wins.
+            if getattr(opts, "drug_use_vertical_sections", False):
+                drug_field.set_vertical_sections(
+                    x_edges=getattr(opts, "drug_initial_x_edges", []),
+                    concentrations=getattr(opts, "drug_initial_concentrations", []),
+                )
+            if getattr(opts, "drug_use_square_perimeter", False):
+                drug_field.set_square_perimeter_source(
+                    border_width=getattr(opts, "drug_square_perimeter_width", 10.0),
+                    source_concentration=getattr(opts, "drug_square_perimeter_concentration", 8.0),
+                    interior_concentration=getattr(opts, "drug_square_interior_concentration", 0.0),
+                    maintain_source=getattr(opts, "drug_square_maintain_perimeter", True),
+                )
+
+        else:
+            raise ValueError(
+                "Unknown drug_initial_condition: "
+                f"{drug_initial_condition!r}. Use 'uniform', 'vertical_sections', "
+                "'square_perimeter', or 'legacy'."
+            )
+
+        # Snapshot the configured starting field before the first diffusion step.
+        # This is exported later as drug_field_initial.* when the toggles are on.
+        drug_field.capture_initial_concentration()
+
+        # Print a compact sanity check to the console. This makes it immediately
+        # obvious whether a supposedly uniform control actually started uniform,
+        # instead of discovering the problem only from the final heatmap.
+        summary = drug_field.diagnostic_summary(drug_field.initial_concentration)
+        print(
+            "🧪 Drug field initialised "
+            f"mode={drug_initial_condition} "
+            f"shape={summary['shape']} "
+            f"min={summary['min']:.6g} max={summary['max']:.6g} "
+            f"mean={summary['mean']:.6g} centre={summary['centre']:.6g} "
+            f"alpha={drug_field.alpha:.6g}"
+        )
+
+        # Print a second sanity check for the growth-response logic at the origin,
+        # where the seed tip starts. This is especially useful for MIC controls:
+        # with the pharmacodynamic model, A == MIC should report raw_growth ≈ 0.
+        origin_concentration = drug_field.sample(MPoint(0, 0, 0))
+        response_model = str(getattr(opts, "drug_response_model", "pharmacodynamic")).strip().lower()
+        if response_model in {"pharmacodynamic", "mic", "mic_pharmacodynamic"}:
+            origin_raw_growth = drug_field.pharmacodynamic_growth_rate(
+                concentration=origin_concentration,
+                mic=getattr(opts, "drug_wildtype_mic", 1.0),
+                max_growth_rate=getattr(opts, "growth_rate", 1.0),
+                min_growth_rate=getattr(opts, "drug_min_growth_rate", -getattr(opts, "growth_rate", 1.0)),
+                hill_coefficient=getattr(opts, "drug_hill_coefficient", 4.0),
+            )
+            origin_applied_growth = max(origin_raw_growth, 0.0)
+        else:
+            origin_multiplier = drug_field.growth_multiplier(
+                concentration=origin_concentration,
+                mic=getattr(opts, "drug_wildtype_mic", 1.0),
+                hill_coefficient=getattr(opts, "drug_hill_coefficient", 4.0),
+                min_multiplier=getattr(opts, "drug_min_growth_multiplier", 0.0),
+            )
+            origin_raw_growth = getattr(opts, "growth_rate", 1.0) * origin_multiplier
+            origin_applied_growth = max(origin_raw_growth, 0.0)
+
+        print(
+            "🧪 Drug response at origin "
+            f"model={response_model} "
+            f"A={origin_concentration:.6g} "
+            f"MIC={getattr(opts, 'drug_wildtype_mic', 1.0):.6g} "
+            f"raw_growth={origin_raw_growth:.6g} "
+            f"applied_growth={origin_applied_growth:.6g}"
+        )
+
+        logger.info(
+            "Drug field enabled: mode=%s shape=%s alpha=%.4f",
+            drug_initial_condition,
+            drug_field.concentration.shape,
+            drug_field.alpha,
+        )
+
     # Determine output directory from environment (batch or default)
     output_dir = os.getenv("BATCH_OUTPUT_DIR", "outputs")
     logger.info(f"Output dir: {output_dir}")
@@ -162,13 +278,15 @@ def setup_simulation(opts):
         "mutator": mutator,
         "stats": stats,
         "opts": opts,
-        "anisotropy_grid": anisotropy_grid
+        "anisotropy_grid": anisotropy_grid,
+        "drug_field": drug_field
     }
 
 
 def step_simulation(mycel, components, step):
     """
     Perform one timestep:
+        Diffuse antifungal field if enabled,
         Update tropism fields,
         Apply orientator,
         Step the Mycel model,
@@ -185,6 +303,13 @@ def step_simulation(mycel, components, step):
     mutator = components["mutator"]
     stats = components["stats"]
     opts = components["opts"]
+    drug_field = components.get("drug_field", None)
+
+    # Let the antifungal field diffuse before any hyphal tip grows this step.
+    # This ordering matches the intended biology: tips respond to the current
+    # local concentration after environmental diffusion has occurred.
+    if drug_field is not None:
+        drug_field.diffuse_once()
 
     # Clear previous field sources and re-add all sections as SectFieldFinders
     aggregator.sources.clear()
@@ -200,8 +325,9 @@ def step_simulation(mycel, components, step):
         if use_2d:
             tip.orientation.coords[2] = 0.0
 
-    # Advance simulation by one time step (grow, branch, prune)
-    mycel.step()
+    # Advance simulation by one time step (grow, branch, prune).
+    # The mycelium samples drug_field locally at each active tip when present.
+    mycel.step(drug_field=drug_field)
 
     # In 2D mode, clamp all segment endpoints to z=0 (safety net)
     if use_2d:
@@ -241,6 +367,7 @@ def generate_outputs(mycel, components, output_dir="outputs"):
     stats = components["stats"]
     opts = components["opts"]
     anisotropy_grid = components.get("anisotropy_grid", None)
+    drug_field = components.get("drug_field", None)
 
         # In 2D mode, prefer 2D visualisations and disable 3D-heavy outputs
     if getattr(opts, "use_2d", False):
@@ -320,6 +447,38 @@ def generate_outputs(mycel, components, output_dir="outputs"):
 
     if opts.generate_density_map_csv:
         export_grid_to_csv(grid, f"{output_dir}/density_map.csv")
+
+    # Antifungal field exports. These are only written when the drug field is
+    # enabled and the corresponding output toggles are True. Initial-field
+    # exports are especially useful for control tests because the final heatmap
+    # has already changed through diffusion.
+    if drug_field is not None:
+        final_summary = drug_field.diagnostic_summary()
+        print(
+            "🧪 Drug field final "
+            f"min={final_summary['min']:.6g} max={final_summary['max']:.6g} "
+            f"mean={final_summary['mean']:.6g} centre={final_summary['centre']:.6g}"
+        )
+
+        initial = getattr(drug_field, "initial_concentration", None)
+        if initial is not None:
+            if getattr(opts, "generate_drug_field_initial_npy", False):
+                drug_field.export_npy(f"{output_dir}/drug_field_initial.npy", array=initial)
+            if getattr(opts, "generate_drug_field_initial_csv", False):
+                drug_field.export_csv(f"{output_dir}/drug_field_initial.csv", array=initial)
+            if getattr(opts, "generate_drug_field_initial_png", False):
+                drug_field.export_png(
+                    f"{output_dir}/drug_field_initial.png",
+                    array=initial,
+                    title="Initial antifungal field",
+                )
+
+        if getattr(opts, "generate_drug_field_npy", False):
+            drug_field.export_npy(f"{output_dir}/drug_field_final.npy")
+        if getattr(opts, "generate_drug_field_csv", False):
+            drug_field.export_csv(f"{output_dir}/drug_field_final.csv")
+        if getattr(opts, "generate_drug_field_png", False):
+            drug_field.export_png(f"{output_dir}/drug_field_final.png")
 
     # Time-series CSV + animation (dependency handled)
     series_path = f"{output_dir}/mycelium_time_series.csv"

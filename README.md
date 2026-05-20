@@ -29,7 +29,7 @@ cd python_nsm/python_wd/python_nsm/hyphal_growth_model
 
 ```bash
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+conda create --name pycelium_env python3.11
 ```
 
 ### Install dependencies

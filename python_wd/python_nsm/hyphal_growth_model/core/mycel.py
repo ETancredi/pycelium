@@ -38,7 +38,7 @@ class Mycel:
         root.set_field_aggregator(None)     # Disable field aggregator until configured
         self.sections.append(root)          # Add seed to the section list
 
-    def step(self):
+    def step(self, drug_field=None):
         """Advance the simulation by one time step:
         1. Grow existing segments
         2. Apply destructor checks
@@ -46,6 +46,12 @@ class Mycel:
         4. Record data snapshots
         5. Prune excess tips if needed
         6. Update histories and increment time.
+
+        Args:
+            drug_field:
+                Optional DrugField2D instance. When supplied, each active tip
+                samples local antifungal concentration and its growth rate is
+                reduced according to the configured MIC / Hill-response model.
         """
         new_sections = []  # Hold branches created this step
 
@@ -59,8 +65,30 @@ class Mycel:
             if section.is_dead:  # Skip dead segments
                 continue
 
-            # Grow by growth_rate over time_step
-            section.grow(self.options.growth_rate, self.options.time_step)
+            # Compute the effective local growth rate for this section.
+            # If no drug field is present, this simply returns options.growth_rate.
+            # If drug is enabled, the tip samples local concentration and receives
+            # a pharmacodynamic growth rate before Section.grow() applies its
+            # existing length-scaled growth logic.
+            effective_growth_rate = self._drug_adjusted_growth_rate(section, drug_field)
+
+            # The MIC-centred pharmacodynamic model can return zero or negative
+            # raw growth rates. Those rates should not move hyphae backwards.
+            # _drug_adjusted_growth_rate() therefore clamps the applied rate to
+            # zero and sets section.drug_growth_stalled when drug has halted this
+            # tip without killing it.
+            if section.is_dead:
+                continue
+            if getattr(section, "drug_growth_stalled", False):
+                # A stalled tip remains in place. Age is still incremented so the
+                # record reflects elapsed exposure time, but Section.update() is
+                # deliberately skipped because it treats zero-length seed tips as
+                # dead numerical artefacts.
+                section.age += self.options.time_step
+                continue
+
+            # Grow by effective_growth_rate over time_step.
+            section.grow(effective_growth_rate, self.options.time_step)
             section.update()  # Update internal state (e.g. age increment, orientation adjustments)
 
             # Debug trace for living tips
@@ -155,7 +183,12 @@ class Mycel:
                 "y": tip.end.coords[1],         # Y-coord
                 "z": tip.end.coords[2],         # Z-coord
                 "age": tip.age,                 # Age of tip segment
-                "length": tip.length            # Length of tip segment
+                "length": tip.length,           # Length of tip segment
+                "drug_mic": getattr(tip, "drug_mic", None), # MIC-like tolerance for this tip
+                "drug_concentration": getattr(tip, "last_drug_concentration", None), # Last sampled drug concentration
+                "drug_raw_growth_rate": getattr(tip, "last_drug_raw_growth_rate", None), # Signed Ψ from the drug-response model
+                "drug_effective_growth_rate": getattr(tip, "last_drug_effective_growth_rate", None), # Non-negative rate actually applied
+                "drug_growth_multiplier": getattr(tip, "last_drug_growth_multiplier", None) # Applied growth multiplier after clamping
             }
             for tip in self.get_tips()          # Iterate over active tips
         ]
@@ -189,6 +222,123 @@ class Mycel:
         total_biomass = sum(sec.length for sec in self.sections if not sec.is_dead)
         self.biomass_history.append(total_biomass)
         logger.debug("STEP END: active_tips=%d | biomass=%.2f", len(self.get_tips()), total_biomass)
+
+    def _drug_adjusted_growth_rate(self, section: Section, drug_field=None) -> float:
+        """
+        Return the local growth rate after antifungal response.
+
+        In the current MIC-calibrated model, local concentration is converted into
+        an absolute pharmacodynamic growth rate Ψ. This is different from the old
+        multiplier-only curve: when A == MIC, Ψ is exactly zero. Concentrations
+        above MIC produce negative raw Ψ values, which are then handled according
+        to options.drug_nonpositive_growth_action.
+        """
+        # Ψmax is the normal drug-free growth rate already used by Pycelium.
+        max_growth_rate = self.options.growth_rate
+
+        # Non-tip or dead sections cannot grow; Section.grow() will also guard
+        # this, but returning the base rate avoids unnecessary drug sampling.
+        if not section.is_tip or section.is_dead:
+            return max_growth_rate
+
+        # If drug is disabled, keep explicit diagnostic attributes so downstream
+        # CSV exports have consistent columns.
+        if drug_field is None:
+            section.last_drug_concentration = 0.0
+            section.last_drug_raw_growth_rate = max_growth_rate
+            section.last_drug_effective_growth_rate = max_growth_rate
+            section.last_drug_growth_multiplier = 1.0
+            section.drug_growth_stalled = False
+            return max_growth_rate
+
+        # Sample local drug concentration at the current growing tip endpoint.
+        local_concentration = drug_field.sample(section.end)
+
+        # MIC is inherited per Section and seeded from opts.drug_wildtype_mic.
+        # Later mutation logic can alter section.drug_mic in newly produced branches.
+        mic = getattr(section, "drug_mic", getattr(self.options, "drug_wildtype_mic", 1.0))
+
+        # Select the response model. The pharmacodynamic model is the new default
+        # because it gives the desired MIC behaviour: A == MIC -> zero growth.
+        response_model = str(getattr(self.options, "drug_response_model", "pharmacodynamic")).strip().lower()
+
+        if response_model in {"pharmacodynamic", "mic", "mic_pharmacodynamic"}:
+            # Compute signed Ψ from the MIC-centred pharmacodynamic equation.
+            raw_growth_rate = drug_field.pharmacodynamic_growth_rate(
+                concentration=local_concentration,
+                mic=mic,
+                max_growth_rate=max_growth_rate,
+                min_growth_rate=getattr(self.options, "drug_min_growth_rate", -max_growth_rate),
+                hill_coefficient=getattr(self.options, "drug_hill_coefficient", 4.0),
+            )
+
+        elif response_model in {"hill_multiplier", "legacy", "legacy_hill"}:
+            # Backward-compatible path: local concentration gives a multiplier,
+            # not a true MIC-calibrated growth-rate crossing.
+            multiplier = drug_field.growth_multiplier(
+                concentration=local_concentration,
+                mic=mic,
+                hill_coefficient=getattr(self.options, "drug_hill_coefficient", 4.0),
+                min_multiplier=getattr(self.options, "drug_min_growth_multiplier", 0.0),
+            )
+            raw_growth_rate = max_growth_rate * multiplier
+
+        else:
+            raise ValueError(
+                "Unknown drug_response_model: "
+                f"{response_model!r}. Use 'pharmacodynamic' or 'hill_multiplier'."
+            )
+
+        # Raw Ψ can be negative when local drug is above MIC. Negative extension
+        # would move the hypha backwards, which is not meaningful in this growth
+        # model, so the applied rate is clamped to zero.
+        effective_growth_rate = max(raw_growth_rate, 0.0)
+
+        # Store diagnostics before any kill/stall decision so final CSVs still
+        # explain why a tip stopped.
+        section.last_drug_concentration = local_concentration
+        section.last_drug_raw_growth_rate = raw_growth_rate
+        section.last_drug_effective_growth_rate = effective_growth_rate
+        section.last_drug_growth_multiplier = (
+            effective_growth_rate / max_growth_rate if max_growth_rate > 0.0 else 0.0
+        )
+        section.drug_growth_stalled = False
+
+        # If drug has pushed Ψ to zero or below, decide whether this tip simply
+        # stalls in place or is removed from the active population.
+        if raw_growth_rate <= 0.0:
+            nonpositive_action = str(
+                getattr(self.options, "drug_nonpositive_growth_action", "stall")
+            ).strip().lower()
+
+            if nonpositive_action in {"kill", "die", "death"}:
+                section.is_dead = True
+                section.is_tip = False
+                section.drug_growth_stalled = False
+                logger.debug(
+                    "Drug kill: A=%.4g MIC=%.4g raw_growth=%.4g",
+                    local_concentration,
+                    mic,
+                    raw_growth_rate,
+                )
+
+            elif nonpositive_action in {"stall", "pause", "clamp", "none"}:
+                section.drug_growth_stalled = True
+                logger.debug(
+                    "Drug stall: A=%.4g MIC=%.4g raw_growth=%.4g",
+                    local_concentration,
+                    mic,
+                    raw_growth_rate,
+                )
+
+            else:
+                raise ValueError(
+                    "Unknown drug_nonpositive_growth_action: "
+                    f"{nonpositive_action!r}. Use 'stall' or 'kill'."
+                )
+
+        # Return the non-negative rate that may be passed to Section.grow().
+        return effective_growth_rate
 
     def get_tips(self):
         """Return list of sections that are tips and not dead."""

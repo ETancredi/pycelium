@@ -23,7 +23,13 @@ def export_to_csv(mycel: Mycel, filename="mycelium.csv", all_time=False):
 
         if all_time:
             # Header for time-series export: step, infex, tip index, coords, age, length
-            writer.writerow(["step", "tip_index", "x", "y", "z", "age", "length"])
+            writer.writerow([
+                "step", "tip_index",
+                "x", "y", "z",
+                "age", "length",
+                "drug_mic", "drug_concentration",
+                "drug_raw_growth_rate", "drug_effective_growth_rate", "drug_growth_multiplier"
+            ])
             # Iterate over each recorded time step
             for step_idx, snapshot in enumerate(mycel.time_series):
                 # Snapshot is a list of tip dicts for this step
@@ -36,7 +42,12 @@ def export_to_csv(mycel: Mycel, filename="mycelium.csv", all_time=False):
                         tip["y"], # y-coords
                         tip["z"], # z-coords
                         tip["age"], # age of tip segment
-                        tip["length"] # length of tip segment
+                        tip["length"], # length of tip segment
+                        tip.get("drug_mic", ""), # MIC-like tolerance for this tip
+                        tip.get("drug_concentration", ""), # sampled local drug concentration
+                        tip.get("drug_raw_growth_rate", ""), # signed Ψ from the drug-response model
+                        tip.get("drug_effective_growth_rate", ""), # non-negative rate actually passed to grow()
+                        tip.get("drug_growth_multiplier", "") # applied drug-derived growth multiplier
                     ]
                     writer.writerow(row) # Write one row per tip per step
         else:
@@ -47,7 +58,9 @@ def export_to_csv(mycel: Mycel, filename="mycelium.csv", all_time=False):
                 "x1", "y1", "z1", # end point coords
                 "length", "age", 
                 "is_tip", "is_dead", 
-                "r", "g", "b" # RGB colour channels
+                "r", "g", "b", # RGB colour channels
+                "drug_mic", "drug_concentration", # Antifungal response diagnostics
+                "drug_raw_growth_rate", "drug_effective_growth_rate", "drug_growth_multiplier"
             ]) 
             # Iterate over every segment in the final network
             for s in mycel.get_all_segments():
@@ -66,7 +79,12 @@ def export_to_csv(mycel: Mycel, filename="mycelium.csv", all_time=False):
                     s.age, # segment age
                     s.is_tip, # boolean flag (active vs. inactive tip)
                     s.is_dead, # boolean flag (alive section vs. dead section) 
-                    r, g, b # colour channels
+                    r, g, b, # colour channels
+                    getattr(s, "drug_mic", ""), # MIC-like tolerance carried by the segment
+                    getattr(s, "last_drug_concentration", ""), # Last local drug concentration sampled by the tip
+                    getattr(s, "last_drug_raw_growth_rate", ""), # Signed Ψ from the drug-response model
+                    getattr(s, "last_drug_effective_growth_rate", ""), # Non-negative growth rate actually applied
+                    getattr(s, "last_drug_growth_multiplier", "") # Applied growth multiplier after clamping
                 ]
                 writer.writerow(row) # Write one row per segment
     # Inform user that exports completed
@@ -112,21 +130,49 @@ def export_to_obj(mycel: Mycel, filename="mycelium.obj"):
 
 def export_tip_history(mycel, filename="mycelium_time_series.csv"):
     """
-    Export only he tip position history (step_history) to csv.
+    Export tip positions and optional drug-response diagnostics to CSV.
+
+    The animation code only requires time/x/y/z columns, but extra columns are
+    useful for later analysis of which tips experienced high antifungal and how
+    much their growth was inhibited.
+
     Args:
         mycel: The simulation instance.
         filename(str): Path to output CSV file.
     """
     with open(filename, "w", newline="") as f:
         writer = csv.writer(f)
-        # Header: time, x, y, z
-        writer.writerow(["time", "x", "y", "z"])  
+        # Header: keep time/x/y/z first so existing animation readers still work.
+        writer.writerow([
+            "time", "x", "y", "z",
+            "age", "length",
+            "drug_mic", "drug_concentration",
+            "drug_raw_growth_rate", "drug_effective_growth_rate", "drug_growth_multiplier"
+        ])
 
-        # Each entry in step_history is a (time, list of (x, y, z) tuples)
-        for time, tips in mycel.step_history:
-            for x, y, z in tips:
-                # Format time to 2 decimals for consistency
-                writer.writerow([f"{time:.2f}", x, y, z])
+        # Prefer the richer time_series snapshots created in Mycel.step().
+        # Fall back to the older step_history structure if time_series is absent.
+        if getattr(mycel, "time_series", None):
+            for snapshot in mycel.time_series:
+                for tip in snapshot:
+                    writer.writerow([
+                        f"{tip.get('time', 0.0):.2f}",
+                        tip.get("x", ""),
+                        tip.get("y", ""),
+                        tip.get("z", ""),
+                        tip.get("age", ""),
+                        tip.get("length", ""),
+                        tip.get("drug_mic", ""),
+                        tip.get("drug_concentration", ""),
+                        tip.get("drug_raw_growth_rate", ""),
+                        tip.get("drug_effective_growth_rate", ""),
+                        tip.get("drug_growth_multiplier", ""),
+                    ])
+        else:
+            # Backward-compatible path for older Mycel objects.
+            for time, tips in mycel.step_history:
+                for x, y, z in tips:
+                    writer.writerow([f"{time:.2f}", x, y, z, "", "", "", "", "", "", ""])
     logger.info(f"Tip history exported: {filename}")
 
 def export_biomass_history(mycel: Mycel, filename: str):
