@@ -1,0 +1,63 @@
+hyphal_growth_model
+├── main.py                      	# Entry point for simulation logic (CLI/GUI/ runs call this)
+│
+├── config/                      	# Holds simulation configuration files
+│   ├── sim_config.py            		# Defines the Options dataclass & config loading
+│   └── batch_config.json       		# JSON config file for batch runs / parameter sweeps
+│
+├── core/                        	# Core classes for the simulation model
+│   ├── mycel.py                 		# Defines the Mycelium structure (sections, tips)
+│   ├── options.py               		# All configurable parameters (Options dataclass)
+│   ├── point.py                 		# 3D point class (MPoint) used for positions
+│   └── section.py               		# Represents individual growing segments of the mycelium
+│
+├── compute/                     	# Field aggregation & processing logic
+│   ├── field_aggregator.py                     # Combines different field sources (nutrients, density)
+│   └── processor.py             		# Processes fields & orientations
+│
+├── io_utils/                   	# Input/output utilities (saving, checkpointing)
+│   ├── autostop.py              		# Auto-stop simulation if no active tips remain
+│   ├── checkpoint.py            		# Saves simulation state periodically (Checkpoints)
+│   ├── exporter.py             		# Exports simulation data (CSV, OBJ, time series)
+│   ├── grid_export.py           		# Saves density grids as CSV or PNG
+│   └── saver.py                 		# JSON save/load of Mycelium states
+│
+├── tropisms/                    	# Field & growth direction logic (tropisms)
+│   ├── field_finder.py          		# Generic field finder base
+│   ├── nutrient_field_finder.py 		# Finds nutrient gradients for growth
+│   ├── nutrient_field.py        		# Nutrient field definition & behavior
+│   ├── orientator.py            		# Main logic for computing growth direction
+│   ├── sect_field_finder.py     		# Section-based field logic
+│   └── substrate.py             		# Defines substrates (for future extensions)
+│
+├── vis/                         	# Visualisation & plotting
+│   ├── analyser.py              		# Post-run analysis logic (branch stats etc)
+│   ├── animate_growth.py        	        # Animation of growth over time (MP4)
+│   ├── animate2d.py             		# 2D animation support (alternative vis)
+│   ├── anisotropy_grid.py       		# Handles anisotropy field grids
+│   ├── density_map.py           		# Density field visualisations (heatmaps)
+│   ├── nutrient_vis.py          		# Plots nutrient fields (2D/3D)
+│   ├── plot2d.py               		# 2D plots of mycelium shape
+│   ├── plot3d.py                		# 3D static plots of mycelium
+│   └── plotly_3d_export.py      		# Exports 3D interactive HTML plots
+│
+├── analysis/                    	# Advanced analysis utilities
+│   ├── post_analysis.py         		# Branch angles, orientation analysis (with plots)
+│   └── stats_summary.py         		# Stats summarisation of a run
+│
+├── control/                     	# Runtime mutation / dynamic changes
+│   └── runtime_mutator.py       		# Mutates simulation params during a run (if enabled)
+│
+├── gui/                         	# GUI-related code
+│   └── sim_gui.py               		# PyQt/Tkinter GUI for configuring & launching sims
+│
+├── experiments/                 	# Batch running & sweeps
+│   └── batch_runner.py          		# Runs multiple simulations (sequential/parallel)
+│
+├── launcher/                    	# Launcher script for GUI/CLI/Sweep
+│   └── run.py                   		# Entry point that parses CLI args & launches modes
+│
+├── outputs/                     	# Latest single run outputs (GUI/CLI runs save here)
+├── batch_outputs/               	# All batch run outputs (folder per batch)
+├── checkpoints/                 	# Auto-generated checkpoints during runs
+└── __pycache__/                 	# Compiled Python bytecode (auto-generated)
