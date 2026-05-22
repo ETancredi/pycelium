@@ -295,13 +295,6 @@ git clone https://github.com/ETancredi/pycelium.git
 cd pycelium
 ```
 
-If you are working from one of the zipped development branches, first unzip it and enter the top-level folder, for example:
-
-```bash
-unzip pycelium-biofilm-hindered-drug-diffusion-master-config.zip
-cd pycelium-drug-field-animation-upgrade
-```
-
 ### 2. Create the conda environment
 
 The repository includes an `environment.yml` file:
