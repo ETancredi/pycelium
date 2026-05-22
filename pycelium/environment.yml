@@ -1,0 +1,16 @@
+name: pycelium
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - matplotlib
+  - plotly
+  - opencv
+  - scipy
+  - imageio
+  - ffmpeg
+  - tk
+  - pip
